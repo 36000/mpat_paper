@@ -18,9 +18,11 @@ MPAT writes only to its own tree (mpat.afq.run's ``out_dir``):
     <out-root>/sub-<id>/sub-<id>_log.txt
     <out-root>/all_desc-fuzzydice.csv          (--combine)
 
---combine also adds a binary Dice at a matched number of streamlines (dice_matched, with
-    dice_matched_n), for every subject and bundle that both techniques have: N is the harmonic
-    mean of pyAFQ's streamline counts in the two sessions.  pyAFQ's mask is every voxel at
+--combine also adds, for every subject and bundle that both techniques have, a binary Dice at a
+    matched number of streamlines (dice_matched, with dice_matched_n) and the weighted Dice of
+    Kruper et al. 2021 (wdsc: pyAFQ's dice_coeff, Cousineau et al. 2017) on the same masks, each
+    map first cut to its own mask (pyAFQ's mask is every nonzero voxel, so its wdsc is pyAFQ's
+    wDSC exactly).  N is the harmonic mean of pyAFQ's streamline counts in the two sessions.  pyAFQ's mask is every voxel at
     least one recognized streamline touched.  MPAT's mask is every voxel that N streamlines
     drawn from MPAT's distribution would touch more often than not: with p_v = d_v / n (MPAT's
     density over its expected streamline count, each voxel's chance of being visited by one
@@ -445,17 +447,25 @@ def binary_dice(a, b):
     return float(2 * np.logical_and(a, b).sum() / max(a.sum() + b.sum(), 1))
 
 
+def wdsc(a, b, sa, sb):
+    """Weighted Dice (Cousineau et al. 2017; pyAFQ dice_coeff weighted=True) of the two maps each
+    cut to its own support (sa, sb): the mass of each inside the other's support, over both maps'
+    mass.  A support of every nonzero voxel (pyAFQ's) leaves the map as it is: pyAFQ's wDSC."""
+    a, b = a * sa, b * sb
+    return float(((a * sb).sum() + (b * sa).sum()) / (a.sum() + b.sum()))
+
+
 def matched_dice(a, df):
-    """dice_matched and dice_matched_n for every subject and bundle that both techniques have
-    (NaN elsewhere): pyAFQ's masks are the voxels its streamlines touch; MPAT's are the voxels
+    """dice_matched, wdsc and dice_matched_n for every subject and bundle that both techniques
+    have (NaN elsewhere): pyAFQ's masks are the voxels its streamlines touch; MPAT's are the voxels
     N streamlines drawn from MPAT's distribution would touch more often than not (N p_v >= ln 2,
     or >= 1 with --matched-cut 1), N the harmonic mean of pyAFQ's two streamline counts."""
     cut = np.log(2.0) if a.matched_cut == "ln2" else 1.0
     df = df.copy()
-    df["dice_matched"], df["dice_matched_n"] = np.nan, np.nan
+    df["dice_matched"], df["wdsc"], df["dice_matched_n"] = np.nan, np.nan, np.nan
     techs = set(df["technique"])
     if not {TECHNIQUE, PYAFQ_TECHNIQUE} <= techs:
-        log.warning("dice_matched needs both %s and %s rows; skipped", TECHNIQUE, PYAFQ_TECHNIQUE)
+        log.warning("dice_matched / wdsc need both %s and %s rows; skipped", TECHNIQUE, PYAFQ_TECHNIQUE)
         return df
     key = ["subject", "hemisphere", "bundle"]
     df["hemisphere"] = df["hemisphere"].fillna("")
@@ -470,19 +480,21 @@ def matched_dice(a, df):
         M = [load_density(mpat_dir(a, sub, s), sub, desc) for s in (s1, s2)]        # MPAT
         n_p = [x[2] for x in P]
         if min(n_p) <= 0 or P[0][0] is None or P[1][0] is None:
-            d_p, d_m, N = 0.0, np.nan, np.nan        # pyAFQ found nothing in a session: no N to match
+            res, N = {PYAFQ_TECHNIQUE: (0.0, 0.0), TECHNIQUE: (np.nan, np.nan)}, np.nan   # no N to match
         else:
             N = 2.0 / (1.0 / n_p[0] + 1.0 / n_p[1])
-            d_p = binary_dice(P[0][0] > 0, P[1][0] > 0)
+            p1, p2 = P[0][0], P[1][0]
+            res = {PYAFQ_TECHNIQUE: (binary_dice(p1 > 0, p2 > 0), wdsc(p1, p2, p1 > 0, p2 > 0))}
             if any(d is None or n <= 0 for d, _, n in M):
-                d_m = 0.0
+                res[TECHNIQUE] = (0.0, 0.0)
             else:
-                masks = [N * d / n >= cut for d, _, n in M]
-                d_m = binary_dice(*masks)
-        for tech, val in ((PYAFQ_TECHNIQUE, d_p), (TECHNIQUE, d_m)):
+                k1, k2 = [N * d / n >= cut for d, _, n in M]
+                res[TECHNIQUE] = (binary_dice(k1, k2), wdsc(M[0][0], M[1][0], k1, k2))
+        for tech, (dm, wd) in res.items():
             i = rows.index[rows.technique == tech]
-            df.loc[i, "dice_matched"], df.loc[i, "dice_matched_n"] = val, N
-        log.info("sub-%s %-36s N=%.0f  matched Dice: pyAFQ %.3f, MPAT %.3f", sub, desc, N, d_p, d_m)
+            df.loc[i, ["dice_matched", "wdsc", "dice_matched_n"]] = [dm, wd, N]
+        log.info("sub-%s %-36s N=%.0f  matched Dice: pyAFQ %.3f, MPAT %.3f; wdsc: pyAFQ %.3f, MPAT %.3f",
+                 sub, desc, N, res[PYAFQ_TECHNIQUE][0], res[TECHNIQUE][0], res[PYAFQ_TECHNIQUE][1], res[TECHNIQUE][1])
     return df
 
 
