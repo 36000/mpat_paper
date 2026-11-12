@@ -3,7 +3,7 @@
 bundles (each eye to each LGN) as one density in one colour, their visitation ODFs, every
 bundle's core, and the endpoint and exclusion ROIs the run used.
 
-    python mcat_rgvp_figure.py out/mcat-rgvp --t1 sub-01_T1w.nii.gz -o rgvp
+    python mpat_rgvp_figure.py out/mpat-rgvp --t1 sub-01_T1w.nii.gz -o rgvp
 
 Writes <o>.pdf (vector), <o>.png (300 dpi) and <o>_plane.json (the plane, for the methods).
 
@@ -25,7 +25,7 @@ Writes <o>.pdf (vector), <o>.png (300 dpi) and <o>_plane.json (the plane, for th
 * ODFs: the bundles' visitation ODFs (the directions their walkers take), each divided by its
   bundle's peak and summed, on the voxels the slice passes through, cut by the slice: the ODF
   along each in-plane direction as a closed outline, scaled to each voxel's maximum.
-* Cores: every bundle's core (mcat.core) projected onto the slice; crossed bundles solid,
+* Cores: every bundle's core (mpat.core) projected onto the slice; crossed bundles solid,
   uncrossed dashed.
 * ROIs: the endpoint ROIs (eyes, LGN / thalamus: the bundles' start and end masks) outlined,
   and the exclusion ROIs (the run's invalid-ending tissue: cortex, ventricles, the rest of
@@ -48,8 +48,8 @@ INVALID, EDGE = 3, 4                                    # the RGVP run's dseg la
 
 def parse():
     p = argparse.ArgumentParser(description="figure of the RGVP on a fitted oblique slice")
-    p.add_argument("folder", help="the RGVP run's output folder (mcat-rgvp)")
-    p.add_argument("--t1", help="background (default: the run's _desc-mcat_dseg)")
+    p.add_argument("folder", help="the RGVP run's output folder (mpat-rgvp)")
+    p.add_argument("--t1", help="background (default: the run's _desc-mpat_dseg)")
     p.add_argument("--b0", nargs="?", const="auto", metavar="PATH",
                    help="b0 background instead (already on the DWI grid, so aligned with the densities); "
                         "bare --b0 finds pyAFQ's *_b0ref.nii.gz next to the run")
@@ -78,7 +78,7 @@ def parse():
 
 def rgvp_bundles(folder, which):
     """[(key, label, crossed, files)] for the RGVP run's bundles."""
-    from mcat.core import bundle_files
+    from mpat.core import bundle_files
 
     files = bundle_files(folder)
     out = []
@@ -130,7 +130,7 @@ def background(args, world):
     elif args.b0:
         t1 = args.b0
     if t1 is None:
-        cand = sorted(glob.glob(op.join(args.folder, "*_desc-mcat_dseg.nii.gz")))
+        cand = sorted(glob.glob(op.join(args.folder, "*_desc-mpat_dseg.nii.gz")))
         t1 = cand[0] if cand else None
     if t1 is None:
         return np.zeros(world.shape[:-1])
@@ -154,7 +154,7 @@ def main():
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
 
-    from mcat.geometry import _sh_basis
+    from mpat.geometry import _sh_basis
 
     floor = args.floor
     bundles = rgvp_bundles(args.folder, args.bundles)
@@ -192,7 +192,7 @@ def main():
     # ---- background, exclusion tint, density
     grey = background(args, world)
     rgb = np.repeat(grey[..., None], 3, -1)
-    dseg_f = sorted(glob.glob(op.join(args.folder, "*_desc-mcat_dseg.nii.gz")))
+    dseg_f = sorted(glob.glob(op.join(args.folder, "*_desc-mpat_dseg.nii.gz")))
     excl = None
     if not args.no_rois and dseg_f:
         dseg = nib.load(dseg_f[0])

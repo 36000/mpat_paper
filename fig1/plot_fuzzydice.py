@@ -16,7 +16,7 @@ Prints, for each technique, the mean, median, min and max across tracts of each 
 fuzzy Dice, then MPAT vs pyAFQ on the tracts both have.
 
 Panels are labelled c, d, e (--panel-labels).  The CSV's technique names are read through RENAME:
-"MCAT" (the old name) as MPAT and "pyAFQ" as AFQ, the names printed and plotted.
+"MCAT" (the old name, in CSVs written before the rename) as MPAT and "pyAFQ" as AFQ, the names printed and plotted.
 
 Two more panels on pyAFQ's sampling (--no-sampling leaves them out): (d) one tract's pyAFQ
 fuzzy Dice per subject against its streamline count N (--sampling-bundle, default the left
@@ -40,7 +40,7 @@ import pandas as pd  # noqa: E402
 from matplotlib.patches import Patch  # noqa: E402
 from AFQ.viz.utils import gen_color_dict  # noqa: E402
 
-# the CSV's technique names -> the names printed and plotted (MPAT was MCAT; pyAFQ is AFQ)
+# the CSV's technique names -> the names printed and plotted (MPAT was MPAT; pyAFQ is AFQ)
 RENAME = {"MCAT": "MPAT", "pyAFQ": "AFQ"}
 TECHS = ["MPAT", "AFQ"]
 HATCH = {"MPAT": None, "AFQ": "////"}
@@ -107,7 +107,7 @@ def sampling_fits(full):
     for t, g in x.groupby("tract"):
         if len(g) >= 5:
             beta, alpha = np.polyfit(g.u, g.fd_p, 1)
-            per[t] = dict(alpha=alpha, beta=beta, mcat=g.fd_m.mean(), r=np.corrcoef(g.u, g.gap)[0, 1],
+            per[t] = dict(alpha=alpha, beta=beta, mpat=g.fd_m.mean(), r=np.corrcoef(g.u, g.gap)[0, 1],
                           decades=float(np.log10(g.N.max() / g.N.min())))
     uc = x.u - x.groupby("tract").u.transform("mean")
     gc = x.gap - x.groupby("tract").gap.transform("mean")
@@ -135,7 +135,7 @@ def sampling_panels(fig, gs, s, example, colors):
                zorder=3)
     ax.plot(nn, f["alpha"] + f["beta"] / np.sqrt(nn), color="black", lw=1.4, label=r"$\alpha + \beta/\sqrt{N}$")
     ax.axhline(f["alpha"], color="0.5", lw=0.9, ls="--", label=r"limit, $N\to\infty$")
-    ax.axhline(f["mcat"], color="black", lw=1.4, ls=":", label="MPAT (mean)")
+    ax.axhline(f["mpat"], color="black", lw=1.4, ls=":", label="MPAT (mean)")
     ax.set_xscale("log")
     ax.set_ylim(max(0.0, min(g.fd_p.min(), f["alpha"] + f["beta"] / np.sqrt(nn[0])) - 0.05), 1.0)
     ax.set_xlabel("AFQ streamlines (N)")

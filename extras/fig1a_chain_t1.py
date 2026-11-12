@@ -1,18 +1,18 @@
 #!/usr/bin/env python
-"""Figure 1A: MCAT's absorbing Markov chain drawn on a subject's T1, zoomed on a patch of cortex.
+"""Figure 1A: MPAT's absorbing Markov chain drawn on a subject's T1, zoomed on a patch of cortex.
 
     python fig1a_chain_t1.py --t1 sub-X_T1w.nii.gz --pve sub-X_desc-pve_probseg.nii.gz \\
         --odf models/sub-X_model-msmtcsd_param-wm_dwimap.nii.gz -o fig1a_chain
 
 Left: the slice, with the zoom window outlined.  Right: the window on the diffusion grid,
-over the T1, with MCAT's states as its tissue rule makes them (mcat.afq.tissue_labels):
+over the T1, with MPAT's states as its tissue rule makes them (mpat.afq.tissue_labels):
 white matter (WM PVE > 0.4) is transient -- arrows show each voxel's hop probabilities to its
 in-plane neighbours, from the fODF towards each neighbour (normalised over the neighbours a
 walker may enter); gray matter absorbs (a valid ending); CSF is never entered.  Third panel:
 the cascade from one seed, the in-plane chain solved exactly (states: voxel x heading, turns
 within --cone): each white-matter voxel's expected visits, each gray-matter voxel's
 probability of being where the walk ends.  All of it is an in-plane illustration of the chain
-(MCAT's own walk is in 3D, on 26 neighbours and 26 headings, with a 35 degree cone).
+(MPAT's own walk is in 3D, on 26 neighbours and 26 headings, with a 35 degree cone).
 
 --center / --size choose the window (world mm); by default it is the patch of the slice's
 upper half with the most white matter touching gray matter.
@@ -30,7 +30,7 @@ from matplotlib.patches import FancyArrowPatch, Patch, Rectangle  # noqa: E402
 from scipy import ndimage  # noqa: E402
 
 AXIS = {"sagittal": 0, "coronal": 1, "axial": 2}
-WM_THRESHOLD = 0.4                 # mcat.afq.WM_THRESHOLD (pyAFQ's tracker)
+WM_THRESHOLD = 0.4                 # mpat.afq.WM_THRESHOLD (pyAFQ's tracker)
 GM_COLOUR = "#e8743b"              # absorbing
 CSF_COLOUR = "#4a90c2"             # never entered
 ARROW_COLOUR = "#ffd84d"
@@ -108,7 +108,7 @@ def t1_plane(t1, k, mm, dims, extent, res=0.25):
 
 def pve_on_slice(pve, world):
     """CSF, GM, WM fractions at the diffusion-grid voxel centres ``world`` (n0, n1, 3), sampled
-    linearly from the PVE on its own grid (pyAFQ writes it on the T1 grid), as MCAT resamples it."""
+    linearly from the PVE on its own grid (pyAFQ writes it on the T1 grid), as MPAT resamples it."""
     ijk = nib.affines.apply_affine(np.linalg.inv(pve.affine), world.reshape(-1, 3)).T
     data = np.asarray(pve.dataobj, np.float32)
     return [ndimage.map_coordinates(data[..., c], ijk, order=1, mode="nearest").reshape(world.shape[:2])
@@ -117,7 +117,7 @@ def pve_on_slice(pve, world):
 
 # ----------------------------------------------------------------------- the chain, in plane
 def fodf_basis(n_coef, dirs):
-    """(n_coef, len(dirs)): sf = sh @ B (descoteaux07 legacy, symmetric or full; mcat.geometry)."""
+    """(n_coef, len(dirs)): sf = sh @ B (descoteaux07 legacy, symmetric or full; mpat.geometry)."""
     from dipy.core.sphere import Sphere
     from dipy.reconst.shm import sh_to_sf_matrix
 

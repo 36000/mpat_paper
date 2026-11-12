@@ -2,9 +2,9 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from AFQ.viz.utils import PanelFigure, trim
 
-plot1 = "../ixi_out/mcat/sub-IXI002Guys0828_desc-mcat_collage.png"
-plot2 = "../baby_out/mcat/sub-01_ses-01_desc-mcat_collage.png"
-plot3 = "../tumor_out/mcat/sub-0393_desc-ifoftumor_figure.png"
+plot1 = "../ixi_out/mpat/sub-IXI002Guys0828_desc-mpat_collage.png"
+plot2 = "../baby_out/mpat/sub-01_ses-01_desc-mpat_collage.png"
+plot3 = "../tumor_out/mpat/sub-0393_desc-ifoftumor_figure.png"
 plot4 = "../rgvp_crossed_hbn.png"
 
 ROWS = [(plot1, plot2), (plot3, plot4)]   # top row, bottom row

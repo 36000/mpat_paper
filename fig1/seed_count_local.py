@@ -13,13 +13,13 @@ subsamples to 1e6 / 1e7 / 1e8 whole-brain streamlines.
   earlier aparc+aseg run's nseeds-1e8/ is left as it is).  LINK_FROM: a folder of pyAFQ
   derivatives made with these same settings (SynthSeg, msmt CSD) to hard-link in first, so
   only the tractography and bundles are computed; None (default): everything computed here.
-* Bundles: the left CST only, as MCAT's --synthseg-cst defines it (mcat.bundles.synthseg_cst_bd):
+* Bundles: the left CST only, as MPAT's --synthseg-cst defines it (mpat.bundles.synthseg_cst_bd):
   precentral, paracentral and postcentral cortex to the brainstem, SynthSeg's labels used
   exactly (exact_endpoints: no 4 mm growth), no waypoints, kept to the left hemisphere; no
-  cleaning (as MCAT), minimum length 40.  The masks come from MCAT
-  (mcat.afq.synthseg_cst_for_pyafq: SynthSeg with its cortical parcellation, run once if it is
-  not there yet, the ends written on the b0 grid); MCAT_DIR: where MCAT keeps (or finds) that
-  parcellation, e.g. the folder of an MCAT --synthseg-cst run on this subject.
+  cleaning (as MPAT), minimum length 40.  The masks come from MPAT
+  (mpat.afq.synthseg_cst_for_pyafq: SynthSeg with its cortical parcellation, run once if it is
+  not there yet, the ends written on the b0 grid); MPAT_DIR: where MPAT keeps (or finds) that
+  parcellation, e.g. the folder of an MPAT --synthseg-cst run on this subject.
 * Recognition: if this folder already has recognition from an earlier definition, it is
   clobbered once (clobber(dependent_on="recog"); the tractography is kept) and redone; a
   marker file stops a rerun from redoing it.  Only the recognized bundles are exported
@@ -43,7 +43,7 @@ from AFQ.api.participant import ParticipantAFQ  # noqa: E402
 SUBJECT = "627549"
 N_SEEDS = int(5e7)                 # about 1.3e8 streamlines (enough for the 1e8 panel)
 LABEL = "1e8-synthseg"
-MCAT_DIR = None                    # None: <out>/mcat; or the MCAT folder of a --synthseg-cst run (reuses its SynthSeg)
+MPAT_DIR = None                    # None: <out>/mpat; or the MPAT folder of a --synthseg-cst run (reuses its SynthSeg)
 LINK_FROM = None                   # pyAFQ derivatives with these settings (SynthSeg, msmt CSD) to reuse
 NOT_LINKED = ("tractography", "bundles", "profiles", "viz", "stats", ".html")   # recomputed here
 
@@ -91,10 +91,10 @@ def main():
         tracking_params=dict(n_seeds=N_SEEDS, directions="prob", odf_model="msmtcsd",
                              random_seeds=True, rng_seed=2026, trx=True))
 
-    # the SynthSeg CST's ends, from MCAT (as MCAT's --synthseg-cst and --pyafq use them)
-    from mcat.afq import synthseg_cst_for_pyafq
+    # the SynthSeg CST's ends, from MPAT (as MPAT's --synthseg-cst and --pyafq use them)
+    from mpat.afq import synthseg_cst_for_pyafq
 
-    bd = synthseg_cst_for_pyafq(ParticipantAFQ(**inputs), abd.BundleDict({}), out_dir=MCAT_DIR)
+    bd = synthseg_cst_for_pyafq(ParticipantAFQ(**inputs), abd.BundleDict({}), out_dir=MPAT_DIR)
     left = dict(bd._dict["Left Corticospinal"], length={"min_len": 40}, mahal={"clean_rounds": 0})
     print("Left Corticospinal:", {k: (op.basename(v) if isinstance(v, str) else v) for k, v in left.items()})
     bundle_info = abd.BundleDict({"Left Corticospinal": left}, resample_subject_to=bd.resample_subject_to)
@@ -109,7 +109,7 @@ def main():
         myafq.clobber(dependent_on="recog")
     path = myafq.export("bundles")
     with open(marker, "w") as fh:
-        fh.write("recognition with the SynthSeg left CST (mcat.bundles.synthseg_cst_bd, exact ends)\n")
+        fh.write("recognition with the SynthSeg left CST (mpat.bundles.synthseg_cst_bd, exact ends)\n")
     print(f"wrote {path}")
 
 

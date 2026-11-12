@@ -5,7 +5,7 @@ scale, each panel divided by its own peak).
 Example (HCP 627549 CST)
 ------------------------
 python fig1b_mips.py --bundle "Left Corticospinal" \
-    --markov mcat/sub-627549_bundle-LeftCorticospinal_desc-density_map.nii.gz \
+    --markov mpat/sub-627549_bundle-LeftCorticospinal_desc-density_map.nii.gz \
     --background sub-627549_desc-brain_mask.nii.gz --view coronal --out fig1b.png
 
 The pyAFQ runs are hardcoded (PYAFQ_RUNS: the segmented tractography of the 1e6 / 1e7 / 1e8

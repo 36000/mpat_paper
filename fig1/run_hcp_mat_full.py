@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""HCP test-retest of pyAFQ's default bundles with MCAT (and, with --pyafq, pyAFQ's own
+"""HCP test-retest of pyAFQ's default bundles with MPAT (and, with --pyafq, pyAFQ's own
 tractography): fuzzy Dice only.
 
     python run_hcp_mat_full.py 111312 [more subjects ...] [--pyafq]
@@ -9,11 +9,11 @@ For each subject and session (1200, Retest) this reuses the pyAFQ derivatives th
 run_hcp_reward.py wrote to <writeable>/reward/pyafq_out/sub-<id>/ses-<ses>/ (msmt CSD fit,
 SynthSeg, PVE, brain mask, WM/GM interface, SyN mapping) and segments pyAFQ's default
 bundles (default_bd + slf_bd + callosal_bd, what pyAFQ uses when bundle_info is unset)
-with MCAT.  pyAFQ's output_dir is the existing session folder, so it finds its
+with MPAT.  pyAFQ's output_dir is the existing session folder, so it finds its
 derivatives there and recomputes nothing (it only computes a file that is missing);
-MCAT writes only to its own tree (mcat.afq.run's ``out_dir``):
+MPAT writes only to its own tree (mpat.afq.run's ``out_dir``):
 
-    <out-root>/sub-<id>/ses-<ses>/mcat/       MCAT outputs (densities, endpoints, ...)
+    <out-root>/sub-<id>/ses-<ses>/mpat/       MPAT outputs (densities, endpoints, ...)
     <out-root>/sub-<id>/sub-<id>_desc-fuzzydice.csv
     <out-root>/sub-<id>/sub-<id>_log.txt
     <out-root>/all_desc-fuzzydice.csv          (--combine)
@@ -24,24 +24,24 @@ MCAT writes only to its own tree (mcat.afq.run's ``out_dir``):
     symlinks; copies if the trees are on different file systems), without any tractography,
     so pyAFQ recomputes only the tractography and the bundles and never writes into the
     original folder.  Each bundle's streamlines become a density map (streamline count per
-    voxel, dipy density_map) on MCAT's grid, pyafq/densities/, and their fuzzy Dice goes in the same
+    voxel, dipy density_map) on MPAT's grid, pyafq/densities/, and their fuzzy Dice goes in the same
     CSV with technique "pyAFQ" (expected_streamlines_* are then the streamline counts).
-    Bundles: pyAFQ's defaults only (pyAFQ rejects MCAT's "mcat" rules on the HCC and fornix
+    Bundles: pyAFQ's defaults only (pyAFQ rejects MPAT's "mpat" rules on the HCC and fornix
     definitions).  Resumes: a session whose densities are all written is skipped.
 
---cst-fornix-hcc (for a tree written before MCAT's midline side fix):
-    reruns both corticospinal tracts (the Left CST came out empty: MCAT kept it to the right
-    hemisphere) and adds the fornix and the hippocampal cingulum (MCAT's bundle dictionary,
-    mcat.bundles.mcat_bd); the other bundles' outputs are reused.  The old CST outputs move to
-    <out-root>/sub-<id>/ses-<ses>/mcat_old_cst/ the first time (once per session, so a rerun
+--cst-fornix-hcc (for a tree written before MPAT's midline side fix):
+    reruns both corticospinal tracts (the Left CST came out empty: MPAT kept it to the right
+    hemisphere) and adds the fornix and the hippocampal cingulum (MPAT's bundle dictionary,
+    mpat.bundles.mpat_bd); the other bundles' outputs are reused.  The old CST outputs move to
+    <out-root>/sub-<id>/ses-<ses>/mpat_old_cst/ the first time (once per session, so a rerun
     resumes instead of starting over).  The fornix's hypothalamic end needs SynthSeg's
-    hypothalamus, which pyAFQ's SynthSeg run lacks: MCAT reruns SynthSeg for it on its own,
-    once per session, into the MCAT folder (sub-<id>_model-synthseg2hypo_dseg.nii.gz).
+    hypothalamus, which pyAFQ's SynthSeg run lacks: MPAT reruns SynthSeg for it on its own,
+    once per session, into the MPAT folder (sub-<id>_model-synthseg2hypo_dseg.nii.gz).
 
 fuzzy_dice = sum_v min(p_v, q_v), p and q the two sessions' density maps each scaled to
 sum 1 (Crum et al. 2006): threshold-free, 1 for identical maps.  A bundle missing or
 empty in either session gets 0 (as wdsc_common.dice_or_zero); sessions on different
-grids get NaN.  expected_streamlines_* are MCAT's expected numbers of bundle
+grids get NaN.  expected_streamlines_* are MPAT's expected numbers of bundle
 streamlines (one streamline per fODF peak of each WM/GM-interface seed voxel).
 """
 from __future__ import annotations
@@ -60,17 +60,17 @@ import sys
 # ----------------------------------------------------------------------- settings
 SESSIONS = ["1200", "Retest"]
 COHORT = "HCP"
-TECHNIQUE = "MCAT"
+TECHNIQUE = "MPAT"
 PYAFQ_TECHNIQUE = "pyAFQ"
 # pyAFQ outputs that --pyafq recomputes: never linked into its folder
 NOT_LINKED = re.compile(r"(^|/)(tractography|bundles|clean_bundles|viz_bundles|stats|tract_profiles)(/|$)"
                         r"|_tractography|_profiles|\.html$")
-TOL = 1e-6              # relative tolerance of the solves (MCAT's default)
+TOL = 1e-6              # relative tolerance of the solves (MPAT's default)
 REDO_BUNDLES = ("Left Corticospinal", "Right Corticospinal")          # --cst-fornix-hcc
 NEW_BUNDLES = ("Left Fornix", "Right Fornix", "Left Cingulum Hippocampus", "Right Cingulum Hippocampus")
-MAX_MEM = "auto"        # MCAT memory budget: "auto" = min(80%, limit - 10 GB) of the job's limit
-OUT_NAME = "hcp_default_mcat_msmtcsd"   # a fresh tree: the earlier one (msmt aODF) is not resumed
-# pyAFQ derivatives MCAT needs; a missing one would be computed into the pyAFQ folder
+MAX_MEM = "auto"        # MPAT memory budget: "auto" = min(80%, limit - 10 GB) of the job's limit
+OUT_NAME = "hcp_default_mpat_msmtcsd"   # a fresh tree: the earlier one (msmt aODF) is not resumed
+# pyAFQ derivatives MPAT needs; a missing one would be computed into the pyAFQ folder
 NEEDED = ("models/sub-{sub}_model-msmtcsd_param-wm_dwimap.nii.gz",
           "nn/sub-{sub}_model-synthseg2_probseg.nii.gz", "sub-{sub}_desc-pve_probseg.nii.gz",
           "sub-{sub}_desc-brain_mask.nii.gz", "sub-{sub}_desc-wmgmi_mask.nii.gz",
@@ -95,14 +95,14 @@ def _parse(argv=None):
     p.add_argument("--sessions", nargs="+", default=SESSIONS)
     p.add_argument("--bundles", nargs="+", help="only these pyAFQ bundle names (default: all defaults)")
     p.add_argument("--threads", type=int, default=os.cpu_count(), help="threads (default: all cores)")
-    p.add_argument("--max-mem", default=MAX_MEM, help=f"MCAT memory budget (default {MAX_MEM})")
+    p.add_argument("--max-mem", default=MAX_MEM, help=f"MPAT memory budget (default {MAX_MEM})")
     p.add_argument("--tol", type=float, default=TOL)
-    p.add_argument("--moments", action="store_true", help="MCAT spatial first moments (~5x slower)")
+    p.add_argument("--moments", action="store_true", help="MPAT spatial first moments (~5x slower)")
     p.add_argument("--verbose", action="store_true",
-                   help="MCAT timing inside the solves (ms per power step)")
-    p.add_argument("--cores", action="store_true", help="also write MCAT's bundle cores")
-    p.add_argument("--viz", action="store_true", help="also write MCAT's collage and viewer pages")
-    p.add_argument("--force", action="store_true", help="rerun MCAT even if its outputs exist")
+                   help="MPAT timing inside the solves (ms per power step)")
+    p.add_argument("--cores", action="store_true", help="also write MPAT's bundle cores")
+    p.add_argument("--viz", action="store_true", help="also write MPAT's collage and viewer pages")
+    p.add_argument("--force", action="store_true", help="rerun MPAT even if its outputs exist")
     p.add_argument("--cst-fornix-hcc", action="store_true",
                    help="rerun the corticospinal tracts (midline side fix) and add the fornix and the "
                         "hippocampal cingulum; the other bundles' outputs are reused")
@@ -138,12 +138,12 @@ import nibabel as nib  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-log = logging.getLogger("hcp_mcat")
+log = logging.getLogger("hcp_mpat")
 
 
 # ----------------------------------------------------------------------- names
 def desc_of(name):
-    """MCAT's file name for a bundle (mcat.afq: every non-alphanumeric dropped)."""
+    """MPAT's file name for a bundle (mpat.afq: every non-alphanumeric dropped)."""
     return re.sub(r"[^A-Za-z0-9]", "", name)
 
 
@@ -158,10 +158,10 @@ def split_desc(desc):
 
 
 # ----------------------------------------------------------------------- pyAFQ, reused
-def participant(a, sub, ses, pyafq_dir, mcat_bundles=True):
+def participant(a, sub, ses, pyafq_dir, mpat_bundles=True):
     """The ParticipantAFQ of run_hcp_reward.py on its own output folder (same inputs and
-    the settings that name or shape the derivatives), with pyAFQ's default bundles (MCAT's,
-    with --cst-fornix-hcc and ``mcat_bundles``)."""
+    the settings that name or shape the derivatives), with pyAFQ's default bundles (MPAT's,
+    with --cst-fornix-hcc and ``mpat_bundles``)."""
     from AFQ.api.participant import ParticipantAFQ
     import AFQ.definitions.image as afm
 
@@ -175,14 +175,14 @@ def participant(a, sub, ses, pyafq_dir, mcat_bundles=True):
         raise FileNotFoundError(f"sub-{sub} ses-{ses}: missing {missing}")
     synthseg = op.join(pyafq_dir, "nn", f"sub-{sub}_model-synthseg2_probseg.nii.gz")
     extra = {}
-    if a.cst_fornix_hcc and mcat_bundles:     # MCAT's bundles: pyAFQ's defaults + the HCC + the fornix
-        from mcat.bundles import mcat_bd
+    if a.cst_fornix_hcc and mpat_bundles:     # MPAT's bundles: pyAFQ's defaults + the HCC + the fornix
+        from mpat.bundles import mpat_bd
 
-        extra["bundle_info"] = mcat_bd()
+        extra["bundle_info"] = mpat_bd()
     return ParticipantAFQ(
         **dwi, output_dir=pyafq_dir, numba_n_threads=a.threads, **extra,
         brain_mask_definition=afm.LabelledImageFile(path=synthseg, exclusive_labels=[0]),
-        tracking_params={"odf_model": "msmtcsd", "trx": True})   # msmt CSD (symmetric) fODF, read by MCAT too
+        tracking_params={"odf_model": "msmtcsd", "trx": True})   # msmt CSD (symmetric) fODF, read by MPAT too
 
 
 # ----------------------------------------------------------------------- one session
@@ -198,12 +198,12 @@ def names_file(mdir, sub):
 
 def retire_old_cst(mdir, sub):
     """--cst-fornix-hcc: move the corticospinal outputs written before the midline side fix out
-    of the MCAT folder (to mcat_old_cst/ beside it), once per session (a marker file remembers),
+    of the MPAT folder (to mpat_old_cst/ beside it), once per session (a marker file remembers),
     so they are recomputed and a resumed run does not recompute them again."""
     marker = op.join(mdir, f"sub-{sub}_desc-cstredone.json")
     if op.exists(marker) or not op.isdir(mdir):
         return
-    old = op.join(op.dirname(mdir), "mcat_old_cst")
+    old = op.join(op.dirname(mdir), "mpat_old_cst")
     moved = []
     for name in REDO_BUNDLES:
         for f in glob.glob(op.join(mdir, f"sub-{sub}_bundle-{desc_of(name)}_*")):
@@ -225,11 +225,11 @@ def add_names(mdir, sub, names, new):
 
 
 def run_session(a, sub, ses):
-    """MCAT on the bundles of this session that have no outputs yet (all with --force)."""
-    from mcat.afq import run
+    """MPAT on the bundles of this session that have no outputs yet (all with --force)."""
+    from mpat.afq import run
 
     src = op.join(a.pyafq_root, f"sub-{sub}", f"ses-{ses}")
-    mdir = mcat_dir(a, sub, ses)
+    mdir = mpat_dir(a, sub, ses)
     if a.cst_fornix_hcc:
         retire_old_cst(mdir, sub)
     names = None
@@ -303,7 +303,7 @@ def link_derivatives(src, dst):
 
 def run_pyafq_session(a, sub, ses):
     """pyAFQ's tractography and recognition in its own folder, then each bundle's streamline
-    density on MCAT's grid (pyafq/densities/), in the MCAT file layout so compare() reads both."""
+    density on MPAT's grid (pyafq/densities/), in the MPAT file layout so compare() reads both."""
     from dipy.tracking.utils import density_map
     import AFQ.utils.streamlines as aus
 
@@ -322,11 +322,11 @@ def run_pyafq_session(a, sub, ses):
         raise FileNotFoundError(f"sub-{sub} ses-{ses}: pyAFQ derivatives missing from {src}: {missing} "
                                 "(--allow-pyafq lets pyAFQ compute them)")
     link_derivatives(src, pdir)
-    afq = participant(a, sub, ses, pdir, mcat_bundles=False)   # pyAFQ's own defaults
+    afq = participant(a, sub, ses, pdir, mpat_bundles=False)   # pyAFQ's own defaults
     names = list(afq.export("bundle_dict").bundle_names)
     log.info("sub-%s ses-%s: pyAFQ tractography and recognition in %s", sub, ses, pdir)
     seg_file = afq.export("bundles")
-    ref = nib.load(op.join(pdir, NEEDED[0].format(sub=sub)))       # the msmt CSD fODF: MCAT's grid
+    ref = nib.load(op.join(pdir, NEEDED[0].format(sub=sub)))       # the msmt CSD fODF: MPAT's grid
     seg = aus.SegmentedSFT.fromfile(seg_file, "same")
     seg.to_rasmm()
     os.makedirs(ddir, exist_ok=True)
@@ -348,13 +348,13 @@ def run_pyafq_session(a, sub, ses):
         json.dump(names, fh, indent=1)
 
 
-def _session_child(a, sub, ses, logfile, what="mcat"):
+def _session_child(a, sub, ses, logfile, what="mpat"):
     """run_session (or run_pyafq_session) in its own process: everything it held goes back
     to the system after."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
     fh = logging.FileHandler(logfile)
     fh.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
-    for name in ("hcp_mcat", "mcat", "AFQ"):
+    for name in ("hcp_mpat", "mpat", "AFQ"):
         logging.getLogger(name).addHandler(fh)
     try:
         (run_pyafq_session if what == "pyafq" else run_session)(a, sub, ses)
@@ -399,13 +399,13 @@ def bundle_descs(mdirs, sub, bundles):
     return sorted(descs)
 
 
-def mcat_dir(a, sub, ses):
-    return op.join(a.out_root, f"sub-{sub}", f"ses-{ses}", "mcat-moments" if a.moments else "mcat")
+def mpat_dir(a, sub, ses):
+    return op.join(a.out_root, f"sub-{sub}", f"ses-{ses}", "mpat-moments" if a.moments else "mpat")
 
 
 def compare(a, sub, technique=TECHNIQUE):
     s1, s2 = a.sessions[:2]
-    where = density_dir if technique == PYAFQ_TECHNIQUE else mcat_dir
+    where = density_dir if technique == PYAFQ_TECHNIQUE else mpat_dir
     mdirs = [where(a, sub, s) for s in (s1, s2)]
     rows = []
     for desc in bundle_descs(mdirs, sub, a.bundles):
@@ -450,12 +450,12 @@ def main(a):
         os.makedirs(sub_out, exist_ok=True)
         fh = logging.FileHandler(op.join(sub_out, f"sub-{sub}_log.txt"))
         fh.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
-        for name in ("hcp_mcat", "mcat", "AFQ"):
+        for name in ("hcp_mpat", "mpat", "AFQ"):
             logging.getLogger(name).addHandler(fh)
         try:
             ctx = multiprocessing.get_context("spawn")
             frames = []
-            for what, tech in [("mcat", TECHNIQUE)] + ([("pyafq", PYAFQ_TECHNIQUE)] if a.pyafq else []):
+            for what, tech in [("mpat", TECHNIQUE)] + ([("pyafq", PYAFQ_TECHNIQUE)] if a.pyafq else []):
                 done = []
                 for ses in a.sessions:       # each session in a fresh process
                     proc = ctx.Process(target=_session_child, args=(a, sub, ses, fh.baseFilename, what))
@@ -478,7 +478,7 @@ def main(a):
             df.to_csv(csv, index=False)
             log.info("wrote %s (%d bundles)", csv, len(df))
         finally:
-            for name in ("hcp_mcat", "mcat", "AFQ"):
+            for name in ("hcp_mpat", "mpat", "AFQ"):
                 logging.getLogger(name).removeHandler(fh)
             fh.close()
     if a.combine:

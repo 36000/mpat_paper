@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""RGVP with MCAT: eyes -> LGN, four bundles, on any subject pyAFQ can process.
+"""RGVP with MPAT: eyes -> LGN, four bundles, on any subject pyAFQ can process.
 
 The retinogeniculate visual pathway (optic nerve, chiasm, optic tract, LGN) found by the
 Markov chain rather than by waypoints: streamlines with one end in an eye and the other in
@@ -7,7 +7,7 @@ a lateral geniculate nucleus.  Four bundles, solved together: each eye to each L
 chiasm sends the nasal fibres across, so both crossed bundles are expected; the chiasm
 table reports each eye's crossed fraction (about 0.5 in humans).
 
-    python mcat_rgvp.py dwi.nii.gz dwi.bval dwi.bvec T1w.nii.gz out/ \
+    python mpat_rgvp.py dwi.nii.gz dwi.bval dwi.bvec T1w.nii.gz out/ \
         --n-proc 8 --max-mem 16GB
 
 Steps (the ROI technique of the earlier HBN optic runs):
@@ -63,11 +63,11 @@ Steps (the ROI technique of the earlier HBN optic runs):
      field of view clips the orbit).
   6. Seeds: every passable voxel touching a target (LGN), not the eyes, whose surroundings
      (muscles, fat) launch walkers into the orbit (--seed both: the old behaviour).  Four bundles (start = one
-     eye, end = one target), solved together.  Outputs as mcat.run writes them, a chiasm
+     eye, end = one target), solved together.  Outputs as mpat.run writes them, a chiasm
      table, the cores, and a viewer page (slices with glyphs and the fODF, 3-D surfaces);
-     in a notebook: mcat.view(<out>/mcat-rgvp, glyphs=True, fodf=...).
+     in a notebook: mpat.view(<out>/mpat-rgvp, glyphs=True, fodf=...).
 
-Written against MCAT (main, 2026-11-05) and pyAFQ 3.4; not run.
+Written against MPAT (main, 2026-11-05) and pyAFQ 3.4; not run.
 """
 from __future__ import annotations
 
@@ -85,7 +85,7 @@ import numpy as np
 from nibabel.processing import resample_from_to
 from scipy import ndimage as ndi
 
-log = logging.getLogger("mcat")
+log = logging.getLogger("mpat")
 
 THALAMUS = {"left": 7, "right": 25}                     # SynthSeg labels (AFQ.nn.synthseg)
 VENTRICLES = [3, 21]                                    # left / right lateral ventricle
@@ -532,18 +532,18 @@ def main():
 
     import numba
 
-    from mcat.afq import ODF_FLOOR, _bytes
-    from mcat.chain import Chain, ChainConfig
-    from mcat.core import write_cores
-    from mcat.geometry import visitation_odf
-    from mcat.solve import prepare_launches, segment_bundles
-    from mcat.viewer import save_html
+    from mpat.afq import ODF_FLOOR, _bytes
+    from mpat.chain import Chain, ChainConfig
+    from mpat.core import write_cores
+    from mpat.geometry import visitation_odf
+    from mpat.solve import prepare_launches, segment_bundles
+    from mpat.viewer import save_html
 
     numba.set_num_threads(max(1, min(args.n_proc, numba.config.NUMBA_NUM_THREADS)))
     t0 = time.time()
     kw = json.loads(args.afq_kwargs)
     afq = ParticipantAFQ(args.dwi, args.bval, args.bvec, args.t1, args.output_dir, tracking_params={"odf_model": "CSD"}, **kw)
-    out = op.join(args.output_dir, "mcat-rgvp-moments" if args.moments else "mcat-rgvp")
+    out = op.join(args.output_dir, "mpat-rgvp-moments" if args.moments else "mpat-rgvp")
     os.makedirs(out, exist_ok=True)
     stem = op.join(out, op.basename(afq.kwargs["base_fname"]))
     fh = logging.FileHandler(f"{stem}_desc-rgvp_log.txt")
@@ -666,7 +666,7 @@ def main():
     sh_chain[iso, 0] = 1.0
     dseg = np.zeros(shape, np.uint8)
     dseg[transient], dseg[gm], dseg[kill], dseg[edge] = 1, 2, 3, 4
-    nib.save(nib.Nifti1Image(dseg, aff), f"{stem}_desc-mcat_dseg.nii.gz")
+    nib.save(nib.Nifti1Image(dseg, aff), f"{stem}_desc-mpat_dseg.nii.gz")
     for side in ("left", "right"):
         shell = ndi.binary_dilation(eyes[side], np.ones((3, 3, 3), bool)) & ~gm
         frac = (shell & transient).sum() / max(shell.sum(), 1)

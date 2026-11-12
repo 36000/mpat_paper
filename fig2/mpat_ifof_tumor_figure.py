@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-"""Four-panel figure of MCAT's IFOFs around a tumour, in the style of MCAT's collages.
+"""Four-panel figure of MPAT's IFOFs around a tumour, in the style of MPAT's collages.
 
-    python mcat_ifof_tumor_figure.py ./tumor_out \\
+    python mpat_ifof_tumor_figure.py ./tumor_out \\
         --tumor /home/john/AFQ_data/tumor/sub-0393/anat_in_diff/sub-0393_space-diff_desc-tumor_label-1_mask.nii.gz
 
 Panels:
@@ -47,12 +47,12 @@ VIEWS = {   # normal, image right, image up (neurological: right on the right, a
 
 def _parse(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    p.add_argument("afq_out", help="pyAFQ output folder of the run (holds mcat/ and pyAFQ's T1 / brain mask)")
+    p.add_argument("afq_out", help="pyAFQ output folder of the run (holds mpat/ and pyAFQ's T1 / brain mask)")
     p.add_argument("--tumor", required=True, help="tumour mask on the DWI grid")
-    p.add_argument("--mcat-dir", help="MCAT outputs (default: <afq_out>/mcat)")
+    p.add_argument("--mpat-dir", help="MPAT outputs (default: <afq_out>/mpat)")
     p.add_argument("--t1", help="T1 on the DWI grid (default: pyAFQ's masked T1 in afq_out)")
     p.add_argument("--brain-mask", help="brain mask (default: pyAFQ's in afq_out)")
-    p.add_argument("--out", help="PNG to write (default: <mcat-dir>/<subject>_desc-ifoftumor_figure.png)")
+    p.add_argument("--out", help="PNG to write (default: <mpat-dir>/<subject>_desc-ifoftumor_figure.png)")
     p.add_argument("--slab", type=int, default=2, help="slices on either side of each slice (default 2)")
     p.add_argument("--ifof-weight", type=float, default=0.5,
                    help="axial slice score: tumour fraction in the slab + this x right IFOF fraction")
@@ -80,9 +80,9 @@ def _one(pattern, what):
     return hits[0]
 
 
-def density_file(mcat_dir, name):
+def density_file(mpat_dir, name):
     desc = "".join(ch for ch in name if ch.isalnum())
-    return _one(op.join(mcat_dir, f"*_bundle-{desc}_desc-density_map.nii.gz"), f"{name} density")
+    return _one(op.join(mpat_dir, f"*_bundle-{desc}_desc-density_map.nii.gz"), f"{name} density")
 
 
 def load(path):
@@ -90,9 +90,9 @@ def load(path):
     return np.asarray(img.dataobj, np.float32), img.affine
 
 
-def out_png(a, mcat_dir):
-    subject = op.basename(density_file(mcat_dir, RIGHT)).split("_bundle-")[0]
-    return a.out or op.join(mcat_dir, f"{subject}_desc-ifoftumor_figure.png")
+def out_png(a, mpat_dir):
+    subject = op.basename(density_file(mpat_dir, RIGHT)).split("_bundle-")[0]
+    return a.out or op.join(mpat_dir, f"{subject}_desc-ifoftumor_figure.png")
 
 
 # ----------------------------------------------------------------------- slice positions
@@ -166,7 +166,7 @@ def render_3d(a, dR, aff, tumor, tum_aff, png, size_px=900):
     <png>_3d.html and returned as an image from a headless Chromium (None, with a note,
     without playwright / WebGL / the NiiVue script).  NiiVue turns and zooms about the centre
     of what it draws; two invisible points put that centre on the tumour."""
-    from mcat.viewer import NIIVUE_CDN, _mz3, isosurface_mz3
+    from mpat.viewer import NIIVUE_CDN, _mz3, isosurface_mz3
 
     col = [int(round(255 * c)) for c in plt.get_cmap("magma")(0.78)[:3]]
     meshes, lo, hi = [], np.full(3, np.inf), np.full(3, -np.inf)
@@ -231,9 +231,9 @@ def render_3d(a, dR, aff, tumor, tum_aff, png, size_px=900):
 
 # ----------------------------------------------------------------------- figure
 def main(a):
-    mcat_dir = a.mcat_dir or op.join(a.afq_out, "mcat")
-    dR, aff = load(density_file(mcat_dir, RIGHT))
-    dL, affL = load(density_file(mcat_dir, LEFT))
+    mpat_dir = a.mpat_dir or op.join(a.afq_out, "mpat")
+    dR, aff = load(density_file(mpat_dir, RIGHT))
+    dL, affL = load(density_file(mpat_dir, LEFT))
     if not np.allclose(aff, affL, atol=1e-3) or dR.shape != dL.shape:
         raise ValueError("the two IFOF maps are on different grids")
     dR, dL = dR / max(dR.max(), 1e-30), dL / max(dL.max(), 1e-30)
@@ -290,7 +290,7 @@ def main(a):
                                                                         s[r1 - 1] + hh]))
     scale = a.tile / max(max(b["ext"][1] - b["ext"][0], b["ext"][3] - b["ext"][2]) for b in boxes)  # in/mm
     sizes = [((b["ext"][1] - b["ext"][0]) * scale, (b["ext"][3] - b["ext"][2]) * scale) for b in boxes]
-    out = out_png(a, mcat_dir)
+    out = out_png(a, mpat_dir)
     if not a.no_3d:
         img = render_3d(a, dR, aff, tumor, tum_aff, out)
         if img is not None:

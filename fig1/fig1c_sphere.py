@@ -1,27 +1,27 @@
 #!/usr/bin/env python
 """Figure 1C: the cortical endpoints of one bundle on the subject's cortex (folded, a little
-inflated), pyAFQ (left) next to MCAT (right) (neuropythy + k3d, rendered headless as in the
+inflated), pyAFQ (left) next to MPAT (right) (neuropythy + k3d, rendered headless as in the
 visual-cortex script).
 
-    python fig1c_sphere.py 627549 mcat/sub-627549_bundle-LeftCorticospinal_desc-endpoints_map.nii.gz \\
+    python fig1c_sphere.py 627549 mpat/sub-627549_bundle-LeftCorticospinal_desc-endpoints_map.nii.gz \\
         --hemi left
 
-Writes fig1c_pyafq.png and fig1c_mcat.png (and .html), both cropped to the same box, and
+Writes fig1c_pyafq.png and fig1c_mpat.png (and .html), both cropped to the same box, and
 fig1c.png, the two side by side with "10^8 streamlines total; <N> in the CST" (as fig1b's
-titles, N: the CST streamlines drawn) and "MCAT" underneath (-o changes the "fig1c" prefix;
+titles, N: the CST streamlines drawn) and "MPAT" underneath (-o changes the "fig1c" prefix;
 --no-labels, --pyafq-label, --bundle-short, --label-size).  pyAFQ: the
-bundle's streamline endpoints (first and last points) counted per voxel of MCAT's grid, from
+bundle's streamline endpoints (first and last points) counted per voxel of MPAT's grid, from
 the same subsample fig1b_mips.py draws for its 1e8 panel (PYAFQ_TRX, TOTAL_STREAMLINES,
 SUBSAMPLE_TARGETS and --rng-seed as there, the draws repeated in the same order, so the same
 streamlines).  Both are painted onto the surface the same way and seen from the same camera
-(set by MCAT's endpoints); each on a log scale over its own peak, down to --floor.
+(set by MPAT's endpoints); each on a log scale over its own peak, down to --floor.
 
-MCAT writes each bundle's expected endpoints per voxel (``*_desc-endpoints_map.nii.gz``,
+MPAT writes each bundle's expected endpoints per voxel (``*_desc-endpoints_map.nii.gz``,
 absorbing voxels: the gray matter where its walkers end).  Each endpoint voxel is assigned to
 its nearest white-surface vertex (and the white vertices within --spread beyond it), which is
 the same vertex on the pial and drawn surfaces; facing banks of a sulcus are far apart on the
 white surface, so nothing crosses one (--assign white, default; voxel / column: the earlier
-vertex-samples-the-map rules).  Colours: magma, log scale over each map's own peak (as MCAT's figures),
+vertex-samples-the-map rules).  Colours: magma, log scale over each map's own peak (as MPAT's figures),
 composited over a curvature underlay; the camera is centred on the endpoints'
 weighted geometric median (found on the sphere) and looks from --elevation above the
 horizontal on their side (--azimuth), superior up.  --surface / --inflate: what is drawn
@@ -53,7 +53,7 @@ PYAFQ_TARGET = int(1e8)                               # the one drawn here
 def parse():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("subject", help="HCP subject ID (neuropythy hcp_subject)")
-    p.add_argument("endpoints", help="MCAT *_desc-endpoints_map.nii.gz")
+    p.add_argument("endpoints", help="MPAT *_desc-endpoints_map.nii.gz")
     p.add_argument("--hemi", choices=["left", "right"], required=True)
     p.add_argument("-o", "--out", default="fig1c")
     p.add_argument("--floor", type=float, default=1e-10, help="faintest endpoint density shown, x the peak")
@@ -87,7 +87,7 @@ def parse():
     p.add_argument("--pyafq", default=PYAFQ_TRX, help="pyAFQ's segmented tractography (.trx)")
     p.add_argument("--bundle", default="Left Corticospinal", help="the bundle's name in --pyafq")
     p.add_argument("--rng-seed", type=int, default=0, help="as fig1b_mips.py's --rng-seed")
-    p.add_argument("--no-pyafq", action="store_true", help="MCAT only")
+    p.add_argument("--no-pyafq", action="store_true", help="MPAT only")
     p.add_argument("--pyafq-label", default="$10^8$", help="pyAFQ's streamline count in its label")
     p.add_argument("--bundle-short", default="CST", help="the bundle's name in pyAFQ's label")
     p.add_argument("--no-labels", action="store_true", help="no labels under the side-by-side renders")
@@ -331,10 +331,10 @@ def main():
             return white_values(img, white, world_to_surf, a.spread, a.max_dist)
         return vertex_values(img, white, pial, a.depths, world_to_surf, a.assign)
 
-    mcat_img = nib.load(a.endpoints)
-    vals = {"mcat": surface_values(mcat_img)}
+    mpat_img = nib.load(a.endpoints)
+    vals = {"mpat": surface_values(mpat_img)}
     if not a.no_pyafq:
-        pyafq_img = pyafq_endpoints(a.pyafq, a.bundle, mcat_img, a.rng_seed)
+        pyafq_img = pyafq_endpoints(a.pyafq, a.bundle, mpat_img, a.rng_seed)
         vals["pyafq"] = surface_values(pyafq_img)
     for k, v in vals.items():
         print(f"{k}: {(v > 0).sum()} of {len(v)} vertices with endpoints; peak {v.max():.3g}")
@@ -345,12 +345,12 @@ def main():
     faces = getattr(sphere.tess, "indexed_faces", None)
     faces = np.asarray(faces if faces is not None else sphere.tess.faces, np.uint32).T
 
-    # camera, from MCAT's endpoints and shared by both renders: at their median (weighted
+    # camera, from MPAT's endpoints and shared by both renders: at their median (weighted
     # geometric median on the sphere, the same vertex on the surface drawn), from --elevation
     # above the horizontal on their side, superior up
     sph = np.asarray(sphere.coordinates, float).T
     sph = sph - sph.mean(0)
-    d = median_direction(sph, vals["mcat"], a.floor)
+    d = median_direction(sph, vals["mpat"], a.floor)
     target = verts[int(np.argmax(sph @ d / np.linalg.norm(sph, axis=1)))].astype(float)
     radius = np.linalg.norm(verts, axis=1).max()
     view = view_direction(d, a.hemi, a.elevation, a.azimuth)
@@ -358,15 +358,15 @@ def main():
     up /= np.linalg.norm(up)
     eye = target + view * radius * (a.distance - 1)
     camera = [float(v) for v in (*eye, *target, *up)]   # k3d: plain floats
-    print(f"camera towards {np.round(d, 3)} (MCAT's endpoints' median); elevation {a.elevation:g} deg, azimuth "
+    print(f"camera towards {np.round(d, 3)} (MPAT's endpoints' median); elevation {a.elevation:g} deg, azimuth "
           f"{np.degrees(np.arctan2(view[1], view[0])):.0f} deg (x axis 0, anterior 90)")
 
-    order = [k for k in ("pyafq", "mcat") if k in vals]          # pyAFQ left, MCAT right
+    order = [k for k in ("pyafq", "mpat") if k in vals]          # pyAFQ left, MPAT right
     for k in order:
         render(verts, faces, colours(vals[k], a.floor, underlay), camera, f"{a.out}_{k}", a.size, f"{a.hemi} {k}")
     if len(order) > 1:
         names = {"pyafq": f"{a.pyafq_label} streamlines total; {pyafq_img.n_streamlines:,} in the {a.bundle_short}",
-                 "mcat": "MCAT"}
+                 "mpat": "MPAT"}
         side_by_side([f"{a.out}_{k}.png" for k in order], a.out,
                      None if a.no_labels else [names[k] for k in order], a.label_size)
 

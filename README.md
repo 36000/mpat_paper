@@ -6,9 +6,9 @@ connections without random sampling* (MPAT: Markov probabilistic absorbing tract
 MPAT itself is at [rokemlab/mpat](https://github.com/rokemlab/mpat). These scripts run it
 (and pyAFQ, for comparison) on public data and make the figures.
 
-> **Naming.** MPAT was developed as MCAT. The Python package is still imported as `mcat` and
-> its command-line tool is `mcat`; MPAT writes `*_desc-mcat_*` file names. The figures label
-> the method MPAT and pyAFQ as AFQ.
+> **Naming.** MPAT was developed as MCAT. The Python package is `mpat` and its command-line
+> tool is `mpat`; it writes its outputs to an `mpat/` folder with `*_desc-mpat_*` file names.
+> The figures label pyAFQ as AFQ.
 
 ## Requirements
 
@@ -44,8 +44,8 @@ fig1/
   fig1_panels.py        assembles Figure 1
 fig2/
   rgvp.py               the RGVP pipeline (eyes to the lateral geniculate region)
-  mcat_rgvp_figure.py   Fig. 2d: the RGVP on an oblique slice
-  mcat_ifof_tumor_figure.py  Fig. 2c: the IFOF through the tumor
+  mpat_rgvp_figure.py   Fig. 2d: the RGVP on an oblique slice
+  mpat_ifof_tumor_figure.py  Fig. 2c: the IFOF through the tumor
   fig2_panels.py        assembles Figure 2
 extras/
   fig1a_chain_t1.py     schematic of the chain on a T1 (not in the current figures)
@@ -62,7 +62,7 @@ setting for your machine; each script's docstring describes its options.
    (`--synthseg-cst`; precentral, paracentral and postcentral cortex to the brainstem):
 
    ```bash
-   mcat dwi.nii.gz dwi.bval dwi.bvec T1w.nii.gz hcp_out --n-proc 16 \
+   mpat dwi.nii.gz dwi.bval dwi.bvec T1w.nii.gz hcp_out --n-proc 16 \
        --synthseg-cst --bundles "Left Corticospinal"
    ```
 
@@ -81,11 +81,11 @@ setting for your machine; each script's docstring describes its options.
 
    ```bash
    python fig1/fig1b_mips.py --bundle "Left Corticospinal" \
-       --markov hcp_out/mcat/sub-627549_bundle-LeftCorticospinal_desc-density_map.nii.gz \
+       --markov hcp_out/mpat/sub-627549_bundle-LeftCorticospinal_desc-density_map.nii.gz \
        --background sub-627549_desc-brain_mask.nii.gz --view coronal --out fig1b.png
 
    python fig1/fig1c_sphere.py 627549 \
-       hcp_out/mcat/sub-627549_bundle-LeftCorticospinal_desc-endpoints_map.nii.gz \
+       hcp_out/mpat/sub-627549_bundle-LeftCorticospinal_desc-endpoints_map.nii.gz \
        --hemi left --floor 1e-3 --elevation 25 --azimuth 0 -o fig1c
    ```
 
@@ -116,17 +116,17 @@ Preprocess with QSIPrep (26.1.1, defaults, 1.75 mm output), run MPAT on all bund
 the collage (SLF I–III left out):
 
 ```bash
-mcat dwi.nii.gz dwi.bval dwi.bvec T1w.nii.gz ixi_out --n-proc 16
+mpat dwi.nii.gz dwi.bval dwi.bvec T1w.nii.gz ixi_out --n-proc 16
 ```
 
 ```python
 import re
-from mcat.collage import write_collage
-from mcat.core import bundle_files
+from mpat.collage import write_collage
+from mpat.core import bundle_files
 
-names = sorted(bundle_files("ixi_out/mcat"))
+names = sorted(bundle_files("ixi_out/mpat"))
 slf = re.compile(r"(SLF|SuperiorLongitudinal)_?(I{1,3}|[123])(?![a-z])", re.I)
-write_collage("ixi_out/mcat", bundles=[n for n in names if not slf.search(n)],
+write_collage("ixi_out/mpat", bundles=[n for n in names if not slf.search(n)],
               t1="<DWI-space image>", pad=0, fontsize=18)
 ```
 
@@ -141,7 +141,7 @@ MPAT with the enhancing tumor and edema/infiltration treated as white matter and
 core as CSF (never entered), then:
 
 ```bash
-python fig2/mcat_ifof_tumor_figure.py tumor_out \
+python fig2/mpat_ifof_tumor_figure.py tumor_out \
     --tumor sub-0393_space-diff_desc-tumor_label-1_mask.nii.gz
 ```
 
@@ -152,7 +152,7 @@ python fig2/mcat_ifof_tumor_figure.py tumor_out \
 ```bash
 python fig2/rgvp.py dwi.nii.gz dwi.bval dwi.bvec T1w.nii.gz rgvp_out \
     --n-proc 16 --eyes arc
-python fig2/mcat_rgvp_figure.py rgvp_out/mcat-rgvp --t1 T1w.nii.gz -o rgvp
+python fig2/mpat_rgvp_figure.py rgvp_out/mpat-rgvp --t1 T1w.nii.gz -o rgvp
 ```
 
 The T1 must be unmasked (the eyes are outside the brain mask). `--eyes arc` finds each eye by
