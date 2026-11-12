@@ -53,6 +53,8 @@ DROP = {"vertical occipital", "vof", "early visual", "ev", "posterior vertical o
         "anterior vertical occipital", "avof"}
 
 METRIC_LABEL = "fuzzy Dice"     # set from --metric in main()
+METRIC_LABELS = {"fuzzy_dice": "fuzzy Dice", "wdsc": "weighted Dice",
+                 "dice_matched": "Dice (matched N)"}
 
 FONTSIZE = 28
 plt.rcParams.update({"font.size": FONTSIZE, "axes.labelsize": FONTSIZE, "axes.titlesize": FONTSIZE,
@@ -233,9 +235,9 @@ def main():
                    help="the example tract of panel b (default: the left ATR)")
     p.add_argument("--n-boot", type=int, default=5000, help="bootstrap resamples (over subjects) for test 2")
     p.add_argument("--panel-labels", default="cde", help="labels of the three panels (default c, d, e)")
-    p.add_argument("--metric", default="fuzzy_dice", choices=["fuzzy_dice", "dice_matched"],
-                   help="the CSV column plotted and tested: fuzzy_dice (default) or dice_matched (binary Dice "
-                        "at a matched number of streamlines, from run_hcp_mat_full.py --combine)")
+    p.add_argument("--metric", default="fuzzy_dice", choices=list(METRIC_LABELS),
+                   help="the CSV column plotted and tested: fuzzy_dice (default); wdsc or dice_matched "
+                        "(from combine_dice_all.sh; dice_matched also from run_hcp_mat_full.py --combine)")
     p.add_argument("--no-sampling", action="store_true", help="leave out the sampling panels (b, c)")
     a = p.parse_args()
 
@@ -246,7 +248,7 @@ def main():
             p.error(f"{a.csv} has no {a.metric} column (rerun run_hcp_mat_full.py --combine)")
         d["fuzzy_dice"] = d[a.metric]
         d = d[d["fuzzy_dice"].notna()]
-        METRIC_LABEL = "Dice (matched N)"
+        METRIC_LABEL = METRIC_LABELS[a.metric]
     d["technique"] = d["technique"].replace(RENAME)
     d = d[d["technique"].isin(TECHS)]
     d = d[~d["bundle"].str.strip().str.lower().isin(DROP)]
