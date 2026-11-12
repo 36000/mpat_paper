@@ -40,7 +40,8 @@ fig1/
   fig1b_mips.py         Fig. 1a: CST density, AFQ at 1e6 / 1e7 / 1e8 streamlines next to MPAT
   fig1c_sphere.py       Fig. 1b: cortical CST endpoints on the cortex, AFQ (1e8) next to MPAT
   run_hcp_mat_full.py   HCP test-retest: MPAT and pyAFQ on both sessions, fuzzy Dice per tract
-  plot_fuzzydice.py     Fig. 1c-e: reliability bar plot, sampling fits and tests
+  combine_dice_all.sh   combines the subjects and adds binary and weighted Dice (masks matched in volume)
+  plot_fuzzydice.py     Fig. 1c-e: reliability bar plot, sampling fits and tests, per measure
   fig1_panels.py        assembles Figure 1
 fig2/
   rgvp.py               the RGVP pipeline (eyes to the lateral geniculate region)
@@ -94,18 +95,24 @@ setting for your machine; each script's docstring describes its options.
 ```bash
 python fig1/run_hcp_mat_full.py <subject IDs> --cst-fornix-hcc --pyafq
 python fig1/run_hcp_mat_full.py --combine            # -> all_desc-fuzzydice.csv
-python fig1/plot_fuzzydice.py all_desc-fuzzydice.csv -o fuzzydice
+#   or, on the cluster, the same in one script:  bash fig1/combine_dice_all.sh [out-root]
+python fig1/plot_fuzzydice.py all_desc-fuzzydice.csv -o testretest
 ```
 
-`plot_fuzzydice.py` prints the statistics reported in the text: MPAT vs AFQ per subject
-(one-sided Wilcoxon signed-rank), and the sampling analysis (the per-tract fits
-α + β/√N, the pooled fit a_t + b/√N, and a 5,000-resample subject bootstrap of the gap left
-as N → ∞).
+Three test-retest measures: fuzzy Dice (`fuzzy_dice`, the primary measure), and binary and
+weighted Dice (`dice_vol`, `wdsc_vol`) on masks matched in volume: AFQ's mask is every voxel
+its streamlines reached, and MPAT's is its K densest voxels, K the mean of AFQ's two mask sizes.
+
+`plot_fuzzydice.py` writes one figure per measure (`testretest_<measure>.png`) and prints, for
+each, the statistics reported in the text: MPAT vs AFQ per subject (one-sided Wilcoxon
+signed-rank), and the sampling analysis (the per-tract fits α + β/√N, the pooled fit
+a_t + b/√N, and a 5,000-resample subject bootstrap of the gap left as N → ∞).  The tests of
+every measure are also written to `testretest_tests.csv`.
 
 ### Assembly
 
 ```bash
-python fig1/fig1_panels.py fig1b.png fig1c.png fuzzydice.png -o fig1.png
+python fig1/fig1_panels.py fig1b.png fig1c.png testretest_fuzzy_dice.png -o fig1.png
 ```
 
 ## Figure 2

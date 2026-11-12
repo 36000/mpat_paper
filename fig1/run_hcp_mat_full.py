@@ -18,16 +18,14 @@ MPAT writes only to its own tree (mpat.afq.run's ``out_dir``):
     <out-root>/sub-<id>/sub-<id>_log.txt
     <out-root>/all_desc-fuzzydice.csv          (--combine)
 
---combine also adds, for every subject and bundle that both techniques have, a binary Dice at a
-    matched number of streamlines (dice_matched, with dice_matched_n) and the weighted Dice of
-    Kruper et al. 2021 (wdsc: pyAFQ's dice_coeff, Cousineau et al. 2017) on the same masks, each
-    map first cut to its own mask (pyAFQ's mask is every nonzero voxel, so its wdsc is pyAFQ's
-    wDSC exactly).  N is the harmonic mean of pyAFQ's streamline counts in the two sessions.  pyAFQ's mask is every voxel at
-    least one recognized streamline touched.  MPAT's mask is every voxel that N streamlines
-    drawn from MPAT's distribution would touch more often than not: with p_v = d_v / n (MPAT's
-    density over its expected streamline count, each voxel's chance of being visited by one
-    streamline), 1 - exp(-N p_v) >= 1/2, i.e. N p_v >= ln 2 (--matched-cut 1: N p_v >= 1, an
-    expected count of at least one).  The density maps are read again; nothing is rerun.
+--combine also adds, for every subject and bundle that both techniques have, binary Dice
+    (dice_vol) and the weighted Dice of Kruper et al. 2021 (wdsc_vol: pyAFQ's dice_coeff,
+    Cousineau et al. 2017) on masks matched in volume (vol_k).  pyAFQ's mask in each session is
+    every voxel at least one recognized streamline reached, and K is the mean of its two mask
+    sizes; MPAT's mask in each session is its K densest voxels.  For weighted Dice each map is
+    first cut to its own mask (pyAFQ's mask is every nonzero voxel, so its value is pyAFQ's wDSC
+    exactly).  Where pyAFQ found nothing in a session it scores 0, and MPAT is matched to the
+    bundle's median K over the other subjects.  The density maps are read again; nothing is rerun.
 
 --pyafq: pyAFQ's own pipeline as well (tractography + recognition, the same settings as the
     derivatives: msmt CSD, trx), in its own folder <out-root>/sub-<id>/ses-<ses>/pyafq/.
@@ -98,9 +96,6 @@ def _parse(argv=None):
     p.add_argument("subjects", nargs="*", help="subject IDs without 'sub-'")
     p.add_argument("--combine", action="store_true",
                    help="concatenate every sub-*/sub-*_desc-fuzzydice.csv under --out-root")
-    p.add_argument("--matched-cut", default="ln2", choices=["ln2", "1"],
-                   help="with --combine: MPAT's matched-N threshold on N p_v (ln2: touched more often than "
-                        "not, the default; 1: expected count >= 1)")
     p.add_argument("--pyafq-root", default=writeable_path and writeable_path + "reward/pyafq_out",
                    help="pyAFQ outputs of run_hcp_reward.py (sub-*/ses-*)")
     p.add_argument("--hcp-root", default=read_only_path and read_only_path + "data",
@@ -455,46 +450,88 @@ def wdsc(a, b, sa, sb):
     return float(((a * sb).sum() + (b * sa).sum()) / (a.sum() + b.sum()))
 
 
+# MPAT bundles pyAFQ doesn't define (it splits the VOF into early visual, posterior and anterior VOF)
+NOT_IN_PYAFQ = {"vertical occipital", "vof"}
+
+
+def top_k(m, k):
+    """The k highest-density voxels of m (no more than its nonzero ones)."""
+    flat = m.ravel()
+    k = int(min(k, np.count_nonzero(flat)))
+    mask = np.zeros(flat.size, bool)
+    if k > 0:
+        mask[np.argpartition(flat, -k)[-k:]] = True
+    return mask.reshape(m.shape)
+
+
+MATCHED = ["dice_vol", "wdsc_vol"]
+
+
+def _score_pyafq(p1, p2):
+    """pyAFQ's masks are the voxels its streamlines reached."""
+    s1, s2 = p1 > 0, p2 > 0
+    return dict(dice_vol=binary_dice(s1, s2), wdsc_vol=wdsc(p1, p2, s1, s2)), int(s1.sum()), int(s2.sum())
+
+
+def _score_mpat(M, K, sub, desc):
+    """MPAT's masks are its K densest voxels, the same K in both sessions.  NaN, with a warning,
+    if a map is missing (MPAT should always find the bundle)."""
+    if any(d is None for d, _, _ in M) or not K > 0:
+        log.warning("sub-%s %s: no MPAT map (or no K) in a session; left NaN", sub, desc)
+        return dict.fromkeys(MATCHED, np.nan)
+    (m1, _, _), (m2, _, _) = M
+    v1, v2 = top_k(m1, K), top_k(m2, K)
+    return dict(dice_vol=binary_dice(v1, v2), wdsc_vol=wdsc(m1, m2, v1, v2))
+
+
 def matched_dice(a, df):
-    """dice_matched, wdsc and dice_matched_n for every subject and bundle that both techniques
-    have (NaN elsewhere): pyAFQ's masks are the voxels its streamlines touch; MPAT's are the voxels
-    N streamlines drawn from MPAT's distribution would touch more often than not (N p_v >= ln 2,
-    or >= 1 with --matched-cut 1), N the harmonic mean of pyAFQ's two streamline counts."""
-    cut = np.log(2.0) if a.matched_cut == "ln2" else 1.0
+    """Binary and weighted Dice on masks matched in volume, for every subject and bundle both
+    techniques have (NaN elsewhere, and for the VOF, which pyAFQ splits).  pyAFQ's masks are the
+    voxels its streamlines reach; K is the mean of its two mask sizes; MPAT's masks are its K
+    densest voxels.  Where pyAFQ found nothing in a session it scores 0, and MPAT is matched to
+    the bundle's median K over the other subjects.  Each map is read once."""
     df = df.copy()
-    df["dice_matched"], df["wdsc"], df["dice_matched_n"] = np.nan, np.nan, np.nan
+    for c in MATCHED + ["vol_k"]:
+        df[c] = np.nan
     techs = set(df["technique"])
     if not {TECHNIQUE, PYAFQ_TECHNIQUE} <= techs:
-        log.warning("dice_matched / wdsc need both %s and %s rows; skipped", TECHNIQUE, PYAFQ_TECHNIQUE)
+        log.warning("matched Dice needs both %s and %s rows; skipped", TECHNIQUE, PYAFQ_TECHNIQUE)
         return df
     key = ["subject", "hemisphere", "bundle"]
     df["hemisphere"] = df["hemisphere"].fillna("")
-    both = (df.groupby(key)["technique"].agg(set).map(lambda t: {TECHNIQUE, PYAFQ_TECHNIQUE} <= t))
-    for (sub, hemi, name), ok in both.items():
-        if not ok:
+
+    def put(rows, tech, vals, K):
+        i = rows.index[rows.technique == tech]
+        vals = {**vals, "vol_k": K}
+        df.loc[i, list(vals)] = list(vals.values())
+
+    pooled, deferred = {}, []
+    for (sub, hemi, name), rows in df.groupby(key):
+        if not {TECHNIQUE, PYAFQ_TECHNIQUE} <= set(rows.technique) or name.strip().lower() in NOT_IN_PYAFQ:
             continue
-        rows = df[(df.subject == sub) & (df.hemisphere == hemi) & (df.bundle == name)]
         s1, s2 = (str(rows.iloc[0][k]) for k in ("session_1", "session_2"))
         desc = desc_of(f"{hemi} {name}".strip())
         P = [load_density(density_dir(a, sub, s), sub, desc) for s in (s1, s2)]     # pyAFQ
+        if any(d is None for d, _, _ in P):                                         # pyAFQ found nothing
+            put(rows, PYAFQ_TECHNIQUE, dict(dice_vol=0.0, wdsc_vol=0.0), np.nan)
+            deferred.append(((sub, hemi, name), rows, desc, s1, s2))
+            continue
+        r_p, k1, k2 = _score_pyafq(P[0][0], P[1][0])
+        K = round((k1 + k2) / 2)
+        pooled.setdefault((hemi, name), []).append(K)
         M = [load_density(mpat_dir(a, sub, s), sub, desc) for s in (s1, s2)]        # MPAT
-        n_p = [x[2] for x in P]
-        if min(n_p) <= 0 or P[0][0] is None or P[1][0] is None:
-            res, N = {PYAFQ_TECHNIQUE: (0.0, 0.0), TECHNIQUE: (np.nan, np.nan)}, np.nan   # no N to match
-        else:
-            N = 2.0 / (1.0 / n_p[0] + 1.0 / n_p[1])
-            p1, p2 = P[0][0], P[1][0]
-            res = {PYAFQ_TECHNIQUE: (binary_dice(p1 > 0, p2 > 0), wdsc(p1, p2, p1 > 0, p2 > 0))}
-            if any(d is None or n <= 0 for d, _, n in M):
-                res[TECHNIQUE] = (0.0, 0.0)
-            else:
-                k1, k2 = [N * d / n >= cut for d, _, n in M]
-                res[TECHNIQUE] = (binary_dice(k1, k2), wdsc(M[0][0], M[1][0], k1, k2))
-        for tech, (dm, wd) in res.items():
-            i = rows.index[rows.technique == tech]
-            df.loc[i, ["dice_matched", "wdsc", "dice_matched_n"]] = [dm, wd, N]
-        log.info("sub-%s %-36s N=%.0f  matched Dice: pyAFQ %.3f, MPAT %.3f; wdsc: pyAFQ %.3f, MPAT %.3f",
-                 sub, desc, N, res[PYAFQ_TECHNIQUE][0], res[TECHNIQUE][0], res[PYAFQ_TECHNIQUE][1], res[TECHNIQUE][1])
+        r_m = _score_mpat(M, K, sub, desc)
+        put(rows, PYAFQ_TECHNIQUE, r_p, K)
+        put(rows, TECHNIQUE, r_m, K)
+        log.info("sub-%s %-36s K=%d  Dice %.3f / %.3f, weighted Dice %.3f / %.3f (pyAFQ / MPAT)", sub, desc, K,
+                 r_p["dice_vol"], r_m["dice_vol"], r_p["wdsc_vol"], r_m["wdsc_vol"])
+
+    for (sub, hemi, name), rows, desc, s1, s2 in deferred:
+        K = float(np.round(np.median(pooled.get((hemi, name), [np.nan]))))
+        M = [load_density(mpat_dir(a, sub, s), sub, desc) for s in (s1, s2)]
+        put(rows, TECHNIQUE, _score_mpat(M, K, sub, desc), K)
+        log.warning("sub-%s %s: pyAFQ found nothing in a session (pyAFQ 0; MPAT at the bundle's "
+                    "median K=%.0f)", sub, desc, K)
     return df
 
 

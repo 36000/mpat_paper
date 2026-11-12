@@ -1,10 +1,16 @@
 #!/usr/bin/env python
-"""Bar plot of test-retest fuzzy Dice per tract, MPAT vs pyAFQ side by side (pyAFQ's colours),
-with each subject as a jittered point.
+"""Bar plot of test-retest agreement per tract, MPAT vs pyAFQ side by side (pyAFQ's colors),
+with each subject as a jittered point; one figure, and one set of tests, per measure.
 
-    python plot_fuzzydice.py all_desc-fuzzydice.csv -o fuzzydice
+    python plot_fuzzydice.py all_desc-fuzzydice.csv -o testretest
 
-Writes <o>.png and <o>.pdf.  Bars are the mean over subjects; tracts are in pyAFQ's order
+Measures (METRICS; --metrics picks some), each column the CSV has: fuzzy Dice (fuzzy_dice), and
+binary and weighted Dice on masks matched in volume (dice_vol, wdsc_vol, from combine_dice_all.sh
+or run_hcp_mat_full.py --combine: AFQ's mask is every voxel its streamlines reached, MPAT's its K
+densest voxels, K the mean of AFQ's two mask sizes).  Writes <o>_<measure>.png / .pdf, then a
+table of every measure's tests (<o>_tests.csv, also printed).
+
+Bars are the mean over subjects; tracts are in pyAFQ's order
 (left / right partners side by side), with MPAT's hippocampal cingulum and fornix after the
 cingulum cingulate (MPAT only: pyAFQ has no such bundles).  Within each tract the MPAT bar is
 solid and the pyAFQ bar is hatched.
@@ -13,18 +19,18 @@ The VOF is left out for both techniques: pyAFQ splits it into Early Visual, Post
 Anterior VOF, so it isn't a like-for-like comparison with MPAT's single VOF.
 
 Prints, for each technique, the mean, median, min and max across tracts of each tract's mean
-fuzzy Dice, then MPAT vs pyAFQ on the tracts both have.
+measure, then MPAT vs pyAFQ on the tracts both have.
 
 Panels are labelled c, d, e (--panel-labels).  The CSV's technique names are read through RENAME:
-"MCAT" (the old name, in CSVs written before the rename) as MPAT and "pyAFQ" as AFQ, the names printed and plotted.
+"MCAT" (the old name) as MPAT and "pyAFQ" as AFQ, the names printed and plotted.
 
 Two more panels on pyAFQ's sampling (--no-sampling leaves them out): (d) one tract's pyAFQ
-fuzzy Dice per subject against its streamline count N (--sampling-bundle, default the left
-IFOF), fitted with alpha + beta / sqrt(N), and MPAT's mean dotted; (e) the MPAT - pyAFQ gap of
+score per subject against its streamline count N (--sampling-bundle, default the left
+ATR), fitted with alpha + beta / sqrt(N), and MPAT's mean dotted; (e) the MPAT - pyAFQ gap of
 every subject and tract against N, with the pooled within-tract fit a_t + b / sqrt(N).
 
 Tests (printed, and noted on the panels): (1) MPAT more reliable than pyAFQ: each subject's
-fuzzy Dice averaged over the tracts both have, paired over subjects, one-sided Wilcoxon
+score averaged over the tracts both have, paired over subjects, one-sided Wilcoxon
 signed-rank (paired t and Cohen's d_z as checks); (2) the gap left at N -> infinity (panel c's
 limit) above 0: a bootstrap over subjects of the pooled fit, 95% interval and one-sided p.
 """
@@ -40,7 +46,10 @@ import pandas as pd  # noqa: E402
 from matplotlib.patches import Patch  # noqa: E402
 from AFQ.viz.utils import gen_color_dict  # noqa: E402
 
-# the CSV's technique names -> the names printed and plotted (MPAT was MPAT; pyAFQ is AFQ)
+# CSV column -> the name in labels; each figure and test uses its own column as "score"
+METRICS = {"fuzzy_dice": "fuzzy Dice", "dice_vol": "Dice", "wdsc_vol": "weighted Dice"}
+
+# the CSV's technique names -> the names printed and plotted (MPAT was MCAT; pyAFQ is AFQ)
 RENAME = {"MCAT": "MPAT", "pyAFQ": "AFQ"}
 TECHS = ["MPAT", "AFQ"]
 HATCH = {"MPAT": None, "AFQ": "////"}
@@ -51,10 +60,6 @@ EXTRA_AFTER = {"Right Cingulum Cingulate": ["Left Cingulum Hippocampus", "Right 
 # VOF and pyAFQ's VOF sub-bundles (full names and abbreviations): left out of the plot
 DROP = {"vertical occipital", "vof", "early visual", "ev", "posterior vertical occipital", "pvof",
         "anterior vertical occipital", "avof"}
-
-METRIC_LABEL = "fuzzy Dice"     # set from --metric in main()
-METRIC_LABELS = {"fuzzy_dice": "fuzzy Dice", "wdsc": "weighted Dice",
-                 "dice_matched": "Dice (matched N)"}
 
 FONTSIZE = 28
 plt.rcParams.update({"font.size": FONTSIZE, "axes.labelsize": FONTSIZE, "axes.titlesize": FONTSIZE,
@@ -95,7 +100,7 @@ def summarise(label, s):
 
 def sampling_fits(full):
     """pyAFQ vs MPAT, paired per subject and tract: N (pyAFQ streamlines, the two sessions'
-    harmonic mean), both fuzzy Dice and their gap; per-tract fits pyAFQ FD = alpha + beta / sqrt(N),
+    harmonic mean), both scores and their gap; per-tract fits pyAFQ score = alpha + beta / sqrt(N),
     and the pooled within-tract fit gap = a_t + b / sqrt(N).  None without both techniques."""
     if "technique" not in full or not {"MPAT", "AFQ"} <= set(full["technique"]):
         return None
@@ -104,14 +109,14 @@ def sampling_fits(full):
     p = f[f.technique == "AFQ"].set_index(["subject", "tract"])
     m = f[f.technique == "MPAT"].set_index(["subject", "tract"])
     n1, n2 = p["expected_streamlines_session_1"], p["expected_streamlines_session_2"]
-    x = pd.DataFrame({"fd_p": p["fuzzy_dice"], "fd_m": m["fuzzy_dice"],
+    x = pd.DataFrame({"fd_p": p["score"], "fd_m": m["score"],
                       "N": 2 / (1 / n1.where(n1 > 0) + 1 / n2.where(n2 > 0))}).dropna().reset_index()
     x["gap"], x["u"] = x.fd_m - x.fd_p, 1 / np.sqrt(x.N)
     per = {}
     for t, g in x.groupby("tract"):
         if len(g) >= 5:
             beta, alpha = np.polyfit(g.u, g.fd_p, 1)
-            per[t] = dict(alpha=alpha, beta=beta, mpat=g.fd_m.mean(), r=np.corrcoef(g.u, g.gap)[0, 1],
+            per[t] = dict(alpha=alpha, beta=beta, mcat=g.fd_m.mean(), r=np.corrcoef(g.u, g.gap)[0, 1],
                           decades=float(np.log10(g.N.max() / g.N.min())))
     uc = x.u - x.groupby("tract").u.transform("mean")
     gc = x.gap - x.groupby("tract").gap.transform("mean")
@@ -124,8 +129,8 @@ def sampling_fits(full):
     return dict(x=x, per=per, b=b, a_t=a_t)
 
 
-def sampling_panels(fig, gs, s, example, colors):
-    """(b) the example tract: pyAFQ fuzzy Dice per subject vs N, its 1/sqrt(N) fit and asymptote,
+def sampling_panels(fig, gs, s, example, colors, label):
+    """(b) the example tract: pyAFQ score per subject vs N, its 1/sqrt(N) fit and asymptote,
     MPAT's mean dotted; (c) every pair's gap vs N, coloured by tract, with the pooled fit."""
     x, per, b = s["x"], s["per"], s["b"]
     if example not in per:      # the clearest trend over the widest range of N
@@ -139,11 +144,11 @@ def sampling_panels(fig, gs, s, example, colors):
                zorder=3)
     ax.plot(nn, f["alpha"] + f["beta"] / np.sqrt(nn), color="black", lw=1.4, label=r"$\alpha + \beta/\sqrt{N}$")
     ax.axhline(f["alpha"], color="0.5", lw=0.9, ls="--", label=r"limit, $N\to\infty$")
-    ax.axhline(f["mpat"], color="black", lw=1.4, ls=":", label="MPAT (mean)")
+    ax.axhline(f["mcat"], color="black", lw=1.4, ls=":", label="MPAT (mean)")
     ax.set_xscale("log")
     ax.set_ylim(max(0.0, min(g.fd_p.min(), f["alpha"] + f["beta"] / np.sqrt(nn[0])) - 0.05), 1.0)
     ax.set_xlabel("AFQ streamlines (N)")
-    ax.set_ylabel(METRIC_LABEL)
+    ax.set_ylabel(label)
     ax.set_title(example)
     ax.spines[["top", "right"]].set_visible(False)
     axd = ax
@@ -179,11 +184,11 @@ def sampling_panels(fig, gs, s, example, colors):
 
 def test_overall(d):
     """Test 1: MPAT more reliable than pyAFQ overall.  The subject is the unit: each subject's
-    fuzzy Dice averaged over the tracts both techniques have, MPAT vs pyAFQ paired over subjects
+    score averaged over the tracts both techniques have, MPAT vs pyAFQ paired over subjects
     (one-sided Wilcoxon signed-rank; paired t as a check)."""
     from scipy import stats
 
-    both = d.groupby(["subject", "tract", "technique"])["fuzzy_dice"].mean().unstack().dropna()
+    both = d.groupby(["subject", "tract", "technique"])["score"].mean().unstack().dropna()
     subj = both.groupby("subject").mean()
     diff = subj["MPAT"] - subj["AFQ"]
     w = stats.wilcoxon(subj["MPAT"], subj["AFQ"], alternative="greater")
@@ -193,7 +198,10 @@ def test_overall(d):
           f"tracts): mean difference {diff.mean():+.3f} (MPAT higher in {(diff > 0).sum()}/{len(diff)} subjects); "
           f"Wilcoxon W = {w.statistic:.0f}, p = {w.pvalue:.2g}; paired t({len(diff) - 1}) = {t.statistic:.1f}, "
           f"p = {t.pvalue:.2g}; Cohen's d_z = {dz:.2f}")
-    return dict(diff=float(diff.mean()), p=float(w.pvalue), n=len(subj), higher=int((diff > 0).sum()))
+    return dict(diff=float(diff.mean()), p=float(w.pvalue), n=len(subj), higher=int((diff > 0).sum()),
+                W=float(w.statistic), t=float(t.statistic), p_t=float(t.pvalue), dz=float(dz),
+                mpat=float(subj["MPAT"].mean()), afq=float(subj["AFQ"].mean()),
+                tracts=int(both.index.get_level_values("tract").nunique()))
 
 
 def test_residual(x, n_boot=5000, seed=0):
@@ -226,39 +234,16 @@ def _p(p):
     return "p < 0.001" if p < 1e-3 else f"p = {p:.3f}"
 
 
-def main():
-    p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    p.add_argument("csv")
-    p.add_argument("-o", "--out", default="fuzzydice")
-    p.add_argument("--ymin", type=float, default=None, help="y-axis floor (default: just below the lowest point)")
-    p.add_argument("--sampling-bundle", default="Left Anterior Thalamic",
-                   help="the example tract of panel b (default: the left ATR)")
-    p.add_argument("--n-boot", type=int, default=5000, help="bootstrap resamples (over subjects) for test 2")
-    p.add_argument("--panel-labels", default="cde", help="labels of the three panels (default c, d, e)")
-    p.add_argument("--metric", default="fuzzy_dice", choices=list(METRIC_LABELS),
-                   help="the CSV column plotted and tested: fuzzy_dice (default); wdsc or dice_matched "
-                        "(from combine_dice_all.sh; dice_matched also from run_hcp_mat_full.py --combine)")
-    p.add_argument("--no-sampling", action="store_true", help="leave out the sampling panels (b, c)")
-    a = p.parse_args()
-
-    d = pd.read_csv(a.csv, dtype={"subject": str})
-    global METRIC_LABEL
-    if a.metric != "fuzzy_dice":                # everything below reads the fuzzy_dice column
-        if a.metric not in d:
-            p.error(f"{a.csv} has no {a.metric} column (rerun run_hcp_mat_full.py --combine)")
-        d["fuzzy_dice"] = d[a.metric]
-        d = d[d["fuzzy_dice"].notna()]
-        METRIC_LABEL = METRIC_LABELS[a.metric]
-    d["technique"] = d["technique"].replace(RENAME)
-    d = d[d["technique"].isin(TECHS)]
-    d = d[~d["bundle"].str.strip().str.lower().isin(DROP)]
-    d["tract"] = [pyafq_name(h, b) for h, b in zip(d["hemisphere"], d["bundle"])]
+def plot_metric(d, metric, a, colors):
+    """One measure: its summaries, tests 1 and 2, and its figure <out>_<metric>.png / .pdf."""
+    label = METRICS[metric]
+    print(f"\n===== {label} ({metric}) =====")
+    d = d.assign(score=d[metric]).dropna(subset=["score"])
     tracts = tract_order(set(d["tract"]))
-    colors = gen_color_dict(tracts)
 
-    means = d.groupby(["tract", "technique"])["fuzzy_dice"].mean().unstack().reindex(index=tracts, columns=TECHS)
+    means = d.groupby(["tract", "technique"])["score"].mean().unstack().reindex(index=tracts, columns=TECHS)
     for t in TECHS:
-        summarise(f"{t} {METRIC_LABEL}", means[t].dropna())
+        summarise(f"{t} {label}", means[t].dropna())
         print()
     both = means.dropna()
     diff = both["MPAT"] - both["AFQ"]
@@ -269,6 +254,15 @@ def main():
     t1 = test_overall(d)
     samp = None if a.no_sampling else sampling_fits(d)
     t2 = test_residual(samp["x"], a.n_boot) if samp is not None else None
+    row = dict(metric=metric, label=label, subjects=t1["n"], tracts=t1["tracts"],
+               mpat_mean=t1["mpat"], afq_mean=t1["afq"], diff=t1["diff"],
+               mpat_higher=t1["higher"], wilcoxon_W=t1["W"], wilcoxon_p=t1["p"],
+               t=t1["t"], t_p=t1["p_t"], d_z=t1["dz"])
+    if samp is not None:
+        row.update(b=t2["b"], residual=t2["a"], residual_lo=t2["lo"], residual_hi=t2["hi"], residual_p=t2["p"],
+                   share_sqrtN=float(samp["b"] * samp["x"].u.mean() / samp["x"].gap.mean()))
+
+    out = f"{a.out}_{metric}"
     rng = np.random.default_rng(0)
     width = max(10, 0.62 * len(tracts) + 2)
     if samp is None:
@@ -281,29 +275,28 @@ def main():
     w = 0.38                                   # bar width; a tract's pair spans 2w
     for i, tract in enumerate(tracts):
         present = [t for t in TECHS if not np.isnan(means.at[tract, t])]
-        offsets = (np.arange(len(present)) - (len(present) - 1) / 2) * w    # lone bars are centred
+        offsets = (np.arange(len(present)) - (len(present) - 1) / 2) * w    # lone bars are centered
         for t, off in zip(present, offsets):
             ax.bar(i + off, means.at[tract, t], width=w, color=colors[tract], hatch=HATCH[t],
                    edgecolor="black", linewidth=0.5, zorder=2)
-            v = d.loc[(d["tract"] == tract) & (d["technique"] == t), "fuzzy_dice"].to_numpy()
+            v = d.loc[(d["tract"] == tract) & (d["technique"] == t), "score"].to_numpy()
             ax.scatter(i + off + rng.uniform(-0.11, 0.11, len(v)), v, s=12, color="black", alpha=0.5,
                        linewidths=0, zorder=3)
-    lo = a.ymin if a.ymin is not None else max(0.0, np.floor((d["fuzzy_dice"].min() - 0.03) * 20) / 20)
+    lo = a.ymin if a.ymin is not None else max(0.0, np.floor((d["score"].min() - 0.03) * 20) / 20)
     ax.set_ylim(lo, 1.0)
     ax.set_xlim(-0.6, len(tracts) - 0.4)
     ax.set_xticks(np.arange(len(tracts)))
     ax.set_xticklabels([short(t) for t in tracts], rotation=60, ha="right", rotation_mode="anchor")
-    ax.set_ylabel(f"test-retest {METRIC_LABEL}")
+    ax.set_ylabel(f"test-retest {label}")
     ax.grid(axis="y", lw=0.4, alpha=0.5, zorder=0)
     ax.spines[["top", "right"]].set_visible(False)
-    ax.legend(handles=[Patch(facecolor="0.8", edgecolor="black", lw=0.5, hatch=HATCH[t],
-                             label=t)
+    ax.legend(handles=[Patch(facecolor="0.8", edgecolor="black", lw=0.5, hatch=HATCH[t], label=t)
                        for t in TECHS],
               loc="lower right", bbox_to_anchor=(1.0, 1.0), ncol=2, frameon=False)
     ax.text(0.0, 1.02, f"MPAT > AFQ in {t1['higher']}/{t1['n']} subjects (mean {t1['diff']:+.3f}, "
                        f"Wilcoxon {_p(t1['p'])})", transform=ax.transAxes, ha="left", va="bottom")
     if samp is not None:
-        sampling_panels(fig, gs, samp, a.sampling_bundle, colors)
+        sampling_panels(fig, gs, samp, a.sampling_bundle, colors, label)
         axc = fig.axes[2]
         # panel labels beside each plot (left of its y label), level with its top
         fig.canvas.draw()
@@ -315,13 +308,51 @@ def main():
             top = inv.transform(axx.transAxes.transform((0, 1)))[1]
             lift = 0.27 * 80 / 72 / fig.get_figheight()      # the font's space above the glyphs
             fig.text(left - 0.005, top + lift, lab, fontsize=60, fontweight="bold", ha="right", va="top")
-        fig.savefig(f"{a.out}.png", dpi=300, bbox_inches="tight", pad_inches=0.2)
-        fig.savefig(f"{a.out}.pdf", bbox_inches="tight")
-        print(f"wrote {a.out}.png / .pdf")
-        return
-    fig.savefig(f"{a.out}.png", dpi=300)
-    fig.savefig(f"{a.out}.pdf")
-    print(f"wrote {a.out}.png / .pdf")
+        fig.savefig(f"{out}.png", dpi=300, bbox_inches="tight", pad_inches=0.2)
+        fig.savefig(f"{out}.pdf", bbox_inches="tight")
+    else:
+        fig.savefig(f"{out}.png", dpi=300)
+        fig.savefig(f"{out}.pdf")
+    plt.close(fig)
+    print(f"wrote {out}.png / .pdf")
+    return row
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    p.add_argument("csv")
+    p.add_argument("-o", "--out", default="testretest", help="output prefix: <out>_<measure>.png / .pdf")
+    p.add_argument("--metrics", nargs="+", choices=list(METRICS), default=None,
+                   help="measures to plot and test (default: each one the CSV has)")
+    p.add_argument("--ymin", type=float, default=None, help="y-axis floor (default: just below the lowest point)")
+    p.add_argument("--sampling-bundle", default="Left Anterior Thalamic",
+                   help="the example tract of panel d (default: the left ATR)")
+    p.add_argument("--n-boot", type=int, default=5000, help="bootstrap resamples (over subjects) for test 2")
+    p.add_argument("--panel-labels", default="cde", help="labels of the three panels (default c, d, e)")
+    p.add_argument("--no-sampling", action="store_true", help="leave out the sampling panels (d, e)")
+    a = p.parse_args()
+
+    d = pd.read_csv(a.csv, dtype={"subject": str})
+    d["technique"] = d["technique"].replace(RENAME)
+    d = d[d["technique"].isin(TECHS)]
+    d = d[~d["bundle"].str.strip().str.lower().isin(DROP)]
+    d["tract"] = [pyafq_name(h, b) for h, b in zip(d["hemisphere"], d["bundle"])]
+    colors = gen_color_dict(tract_order(set(d["tract"])))   # one set of colors for every figure
+
+    metrics = a.metrics or [m for m in METRICS if m in d.columns]
+    missing = [m for m in metrics if m not in d.columns]
+    if missing:
+        p.error(f"not in {a.csv}: {', '.join(missing)} (run combine_dice_all.sh first)")
+    rows = [plot_metric(d, m, a, colors) for m in metrics]
+
+    tab = pd.DataFrame(rows).set_index("metric")
+    tab.to_csv(f"{a.out}_tests.csv")
+    print("\n===== tests, every measure =====")
+    cols = ["mpat_mean", "afq_mean", "diff", "mpat_higher", "wilcoxon_p", "d_z"]
+    cols += [c for c in ("residual", "residual_lo", "residual_hi", "residual_p", "share_sqrtN") if c in tab]
+    with pd.option_context("display.width", 200, "display.float_format", "{:.3g}".format):
+        print(tab[cols].to_string())
+    print(f"wrote {a.out}_tests.csv")
 
 
 if __name__ == "__main__":
