@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Figures and data written by the scripts
+*.png
+*.pdf
+*.html
+*.csv
+*.trx
+*.trk
+*.nii
+*.nii.gz
+*.npz
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store

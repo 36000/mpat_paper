@@ -18,6 +18,15 @@ MPAT writes only to its own tree (mpat.afq.run's ``out_dir``):
     <out-root>/sub-<id>/sub-<id>_log.txt
     <out-root>/all_desc-fuzzydice.csv          (--combine)
 
+--combine also adds a binary Dice at a matched number of streamlines (dice_matched, with
+    dice_matched_n), for every subject and bundle that both techniques have: N is the harmonic
+    mean of pyAFQ's streamline counts in the two sessions.  pyAFQ's mask is every voxel at
+    least one recognized streamline touched.  MPAT's mask is every voxel that N streamlines
+    drawn from MPAT's distribution would touch more often than not: with p_v = d_v / n (MPAT's
+    density over its expected streamline count, each voxel's chance of being visited by one
+    streamline), 1 - exp(-N p_v) >= 1/2, i.e. N p_v >= ln 2 (--matched-cut 1: N p_v >= 1, an
+    expected count of at least one).  The density maps are read again; nothing is rerun.
+
 --pyafq: pyAFQ's own pipeline as well (tractography + recognition, the same settings as the
     derivatives: msmt CSD, trx), in its own folder <out-root>/sub-<id>/ses-<ses>/pyafq/.
     That folder starts as hard links to the pyAFQ session's derivatives (no extra disk, not
@@ -87,6 +96,9 @@ def _parse(argv=None):
     p.add_argument("subjects", nargs="*", help="subject IDs without 'sub-'")
     p.add_argument("--combine", action="store_true",
                    help="concatenate every sub-*/sub-*_desc-fuzzydice.csv under --out-root")
+    p.add_argument("--matched-cut", default="ln2", choices=["ln2", "1"],
+                   help="with --combine: MPAT's matched-N threshold on N p_v (ln2: touched more often than "
+                        "not, the default; 1: expected count >= 1)")
     p.add_argument("--pyafq-root", default=writeable_path and writeable_path + "reward/pyafq_out",
                    help="pyAFQ outputs of run_hcp_reward.py (sub-*/ses-*)")
     p.add_argument("--hcp-root", default=read_only_path and read_only_path + "data",
@@ -428,12 +440,59 @@ def compare(a, sub, technique=TECHNIQUE):
     return pd.DataFrame(rows)
 
 
+def binary_dice(a, b):
+    """2 |A & B| / (|A| + |B|) of two boolean masks (0 when both are empty)."""
+    return float(2 * np.logical_and(a, b).sum() / max(a.sum() + b.sum(), 1))
+
+
+def matched_dice(a, df):
+    """dice_matched and dice_matched_n for every subject and bundle that both techniques have
+    (NaN elsewhere): pyAFQ's masks are the voxels its streamlines touch; MPAT's are the voxels
+    N streamlines drawn from MPAT's distribution would touch more often than not (N p_v >= ln 2,
+    or >= 1 with --matched-cut 1), N the harmonic mean of pyAFQ's two streamline counts."""
+    cut = np.log(2.0) if a.matched_cut == "ln2" else 1.0
+    df = df.copy()
+    df["dice_matched"], df["dice_matched_n"] = np.nan, np.nan
+    techs = set(df["technique"])
+    if not {TECHNIQUE, PYAFQ_TECHNIQUE} <= techs:
+        log.warning("dice_matched needs both %s and %s rows; skipped", TECHNIQUE, PYAFQ_TECHNIQUE)
+        return df
+    key = ["subject", "hemisphere", "bundle"]
+    df["hemisphere"] = df["hemisphere"].fillna("")
+    both = (df.groupby(key)["technique"].agg(set).map(lambda t: {TECHNIQUE, PYAFQ_TECHNIQUE} <= t))
+    for (sub, hemi, name), ok in both.items():
+        if not ok:
+            continue
+        rows = df[(df.subject == sub) & (df.hemisphere == hemi) & (df.bundle == name)]
+        s1, s2 = (str(rows.iloc[0][k]) for k in ("session_1", "session_2"))
+        desc = desc_of(f"{hemi} {name}".strip())
+        P = [load_density(density_dir(a, sub, s), sub, desc) for s in (s1, s2)]     # pyAFQ
+        M = [load_density(mpat_dir(a, sub, s), sub, desc) for s in (s1, s2)]        # MPAT
+        n_p = [x[2] for x in P]
+        if min(n_p) <= 0 or P[0][0] is None or P[1][0] is None:
+            d_p, d_m, N = 0.0, np.nan, np.nan        # pyAFQ found nothing in a session: no N to match
+        else:
+            N = 2.0 / (1.0 / n_p[0] + 1.0 / n_p[1])
+            d_p = binary_dice(P[0][0] > 0, P[1][0] > 0)
+            if any(d is None or n <= 0 for d, _, n in M):
+                d_m = 0.0
+            else:
+                masks = [N * d / n >= cut for d, _, n in M]
+                d_m = binary_dice(*masks)
+        for tech, val in ((PYAFQ_TECHNIQUE, d_p), (TECHNIQUE, d_m)):
+            i = rows.index[rows.technique == tech]
+            df.loc[i, "dice_matched"], df.loc[i, "dice_matched_n"] = val, N
+        log.info("sub-%s %-36s N=%.0f  matched Dice: pyAFQ %.3f, MPAT %.3f", sub, desc, N, d_p, d_m)
+    return df
+
+
 def combine(a):
     files = sorted(glob.glob(op.join(a.out_root, "sub-*", "sub-*_desc-fuzzydice.csv")))
     if not files:
         log.error("no sub-*/sub-*_desc-fuzzydice.csv under %s", a.out_root)
         return 1
     df = pd.concat([pd.read_csv(f, dtype={"subject": str}) for f in files], ignore_index=True)
+    df = matched_dice(a, df)
     out = op.join(a.out_root, "all_desc-fuzzydice.csv")
     df.to_csv(out, index=False)
     log.info("wrote %s (%d subjects, %d rows)", out, df["subject"].nunique(), len(df))

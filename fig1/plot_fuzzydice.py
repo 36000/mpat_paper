@@ -52,6 +52,8 @@ EXTRA_AFTER = {"Right Cingulum Cingulate": ["Left Cingulum Hippocampus", "Right 
 DROP = {"vertical occipital", "vof", "early visual", "ev", "posterior vertical occipital", "pvof",
         "anterior vertical occipital", "avof"}
 
+METRIC_LABEL = "fuzzy Dice"     # set from --metric in main()
+
 FONTSIZE = 28
 plt.rcParams.update({"font.size": FONTSIZE, "axes.labelsize": FONTSIZE, "axes.titlesize": FONTSIZE,
                      "xtick.labelsize": FONTSIZE - 2, "ytick.labelsize": FONTSIZE - 2,
@@ -139,7 +141,7 @@ def sampling_panels(fig, gs, s, example, colors):
     ax.set_xscale("log")
     ax.set_ylim(max(0.0, min(g.fd_p.min(), f["alpha"] + f["beta"] / np.sqrt(nn[0])) - 0.05), 1.0)
     ax.set_xlabel("AFQ streamlines (N)")
-    ax.set_ylabel("fuzzy Dice")
+    ax.set_ylabel(METRIC_LABEL)
     ax.set_title(example)
     ax.spines[["top", "right"]].set_visible(False)
     axd = ax
@@ -231,10 +233,20 @@ def main():
                    help="the example tract of panel b (default: the left ATR)")
     p.add_argument("--n-boot", type=int, default=5000, help="bootstrap resamples (over subjects) for test 2")
     p.add_argument("--panel-labels", default="cde", help="labels of the three panels (default c, d, e)")
+    p.add_argument("--metric", default="fuzzy_dice", choices=["fuzzy_dice", "dice_matched"],
+                   help="the CSV column plotted and tested: fuzzy_dice (default) or dice_matched (binary Dice "
+                        "at a matched number of streamlines, from run_hcp_mat_full.py --combine)")
     p.add_argument("--no-sampling", action="store_true", help="leave out the sampling panels (b, c)")
     a = p.parse_args()
 
     d = pd.read_csv(a.csv, dtype={"subject": str})
+    global METRIC_LABEL
+    if a.metric != "fuzzy_dice":                # everything below reads the fuzzy_dice column
+        if a.metric not in d:
+            p.error(f"{a.csv} has no {a.metric} column (rerun run_hcp_mat_full.py --combine)")
+        d["fuzzy_dice"] = d[a.metric]
+        d = d[d["fuzzy_dice"].notna()]
+        METRIC_LABEL = "Dice (matched N)"
     d["technique"] = d["technique"].replace(RENAME)
     d = d[d["technique"].isin(TECHS)]
     d = d[~d["bundle"].str.strip().str.lower().isin(DROP)]
@@ -244,7 +256,7 @@ def main():
 
     means = d.groupby(["tract", "technique"])["fuzzy_dice"].mean().unstack().reindex(index=tracts, columns=TECHS)
     for t in TECHS:
-        summarise(f"{t} fuzzy Dice", means[t].dropna())
+        summarise(f"{t} {METRIC_LABEL}", means[t].dropna())
         print()
     both = means.dropna()
     diff = both["MPAT"] - both["AFQ"]
@@ -279,7 +291,7 @@ def main():
     ax.set_xlim(-0.6, len(tracts) - 0.4)
     ax.set_xticks(np.arange(len(tracts)))
     ax.set_xticklabels([short(t) for t in tracts], rotation=60, ha="right", rotation_mode="anchor")
-    ax.set_ylabel("test-retest fuzzy Dice")
+    ax.set_ylabel(f"test-retest {METRIC_LABEL}")
     ax.grid(axis="y", lw=0.4, alpha=0.5, zorder=0)
     ax.spines[["top", "right"]].set_visible(False)
     ax.legend(handles=[Patch(facecolor="0.8", edgecolor="black", lw=0.5, hatch=HATCH[t],
